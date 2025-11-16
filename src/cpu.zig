@@ -1,5 +1,6 @@
 const std = @import("std");
 const Memory = @import("memory.zig").Memory;
+const instructions = @import("instructions.zig");
 
 pub const Flags = u8;
 
@@ -52,7 +53,12 @@ pub const CPU = struct {
 
         const opcode = self.fetchOpcode(mem);
         std.debug.print("Opcode: {x}\n", .{opcode});
-        //const instr = &Opcodes[opcode];
+        const instruction = instructions.operation(self, opcode);
+
+        // TODO: Should this be -1 or is that an implementation detail from reference?
+        // Tests should confirm.
+        self.Halt += instruction.cycles - 1;
+
         return false;
     }
 
@@ -61,13 +67,16 @@ pub const CPU = struct {
         self.PC +%= 1;
         return opcode;
     }
-};
 
-pub const Opcode = struct {
-    size: u8,
-    cycles: i32,
-    //addrMode: AddrMode,
-    //handler: fn (cpu: *CPU, mem: *Memory, operand: Operand) void,
-};
+    fn setFlag(self: *CPU, flag: Flags, value: bool) void {
+        if (value) {
+            self.P |= flag;
+        }
+        self.P &= 0xFF - flag;
+    }
 
-pub var Opcodes: [256]Opcode = undefined;
+    pub fn setZN(self: *CPU, value: u8) void {
+        self.setFlag(flagZero, value == 0);
+        self.setFlag(flagNegative, value & 0x80 != 0);
+    }
+};
