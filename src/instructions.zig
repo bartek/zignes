@@ -27,8 +27,6 @@ pub const Operation = struct {
 };
 
 pub fn operation(cpu: *c.CPU, opcode: u8) Operation {
-    std.debug.print("Operation: 0x{x}\n", .{opcode});
-    // TODO: Run the operation then return the Operation instructions like cycles used.
     switch (opcode) {
         0x0 => {}, // NOOP
         0xaa => {

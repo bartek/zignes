@@ -2,6 +2,9 @@ const std = @import("std");
 const Memory = @import("memory.zig").Memory;
 const instructions = @import("instructions.zig");
 
+const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
+
 pub const Flags = u8;
 
 pub const flagCarry: Flags = 1 << 0;
@@ -31,11 +34,18 @@ pub const CPU = struct {
 
     interrupt: Interrupt = .none,
 
-    pub fn init() CPU {
-        return CPU{};
+    allocator: Allocator,
+    Memory: *Memory,
+
+    pub fn init(allocator: Allocator, mem: *Memory) CPU {
+        return CPU{
+            .allocator = allocator,
+            .Memory = mem,
+        };
     }
 
-    pub fn tick(self: *CPU, mem: *Memory) bool {
+    // tick ticks the CPU and returns true if halted
+    pub fn tick(self: *CPU) bool {
         self.Cycles += 1;
 
         if (self.Halt > 0) {
@@ -51,8 +61,7 @@ pub const CPU = struct {
             else => {},
         }
 
-        const opcode = self.fetchOpcode(mem);
-        std.debug.print("Opcode: {x}\n", .{opcode});
+        const opcode = self.fetchOpcode(self.Memory);
         const instruction = instructions.operation(self, opcode);
 
         // TODO: Should this be -1 or is that an implementation detail from reference?
@@ -60,6 +69,29 @@ pub const CPU = struct {
         self.Halt += instruction.cycles - 1;
 
         return false;
+    }
+
+    fn runFromState(self: *CPU, initial_state: *const CPUState) !CPUState {
+        self.PC = initial_state.pc;
+        self.SP = initial_state.s;
+        self.A = initial_state.a;
+        self.X = initial_state.x;
+        self.P = initial_state.p;
+        self.Y = initial_state.y;
+
+        var final_ram = try self.allocator.alloc(struct { u16, u8 }, initial_state.ram.len);
+        for (0..initial_state.ram.len) |i| {
+            const entry = &initial_state.ram[i];
+            const addr = entry[0];
+            assert(i < final_ram.len);
+            final_ram[i] = .{ entry[0], self.Memory.read(addr) };
+        }
+
+        // exec a single instruction
+        // todo: handle  cycles/interrupts?
+        _ = instructions.operation(self, self.fetchOpcode(self.Memory));
+
+        return .{ .pc = self.PC, .a = self.A, .x = self.X, .s = self.SP, .y = self.Y, .p = self.P, .ram = final_ram };
     }
 
     fn fetchOpcode(self: *CPU, mem: *Memory) u8 {
@@ -80,3 +112,94 @@ pub const CPU = struct {
         self.setFlag(flagNegative, value & 0x80 != 0);
     }
 };
+
+const T = std.testing;
+
+fn parseCPUTestCase(allocator: Allocator, testcase_str: []const u8) !std.json.Parsed([]InstrTest) {
+    return try std.json.parseFromSlice(
+        []InstrTest,
+        allocator,
+        testcase_str,
+        .{ .ignore_unknown_fields = true },
+    );
+}
+
+// runTestCase runs a test case by provisioning a CPU, setting initial state, and
+// checking received state against expected.
+fn runTestCase(test_case: *const InstrTest) !void {
+    const allocator = std.heap.page_allocator;
+    const ram = try allocator.alloc(u8, 0x800);
+    var memory = Memory{ .Ram = ram };
+    var cpu = CPU.init(T.allocator, &memory);
+
+    const received = try cpu.runFromState(&test_case.initial);
+    defer T.allocator.free(received.ram);
+    const expected = &test_case.final;
+    try T.expectEqual(expected.pc, received.pc);
+    try T.expectEqual(expected.s, received.s);
+    try T.expectEqual(expected.a, received.a);
+    try T.expectEqual(expected.x, received.x);
+    try T.expectEqual(expected.y, received.y);
+    try T.expectEqual(expected.p, received.p);
+}
+
+// runTestsForInstruction runs all tests for a given `hex` instruction
+fn runTestsForInstruction(hex: []const u8) !void {
+    const instr_file = try std.mem.concat(
+        T.allocator,
+        u8,
+        &[_][]const u8{ hex, ".json" },
+    );
+
+    defer T.allocator.free(instr_file);
+
+    const file_path = try std.fs.path.join(
+        T.allocator,
+        &[_][]const u8{
+            "src",
+            "tests",
+            "nes6502",
+            "v1",
+            instr_file,
+        },
+    );
+    defer T.allocator.free(file_path);
+
+    const contents = try std.fs.cwd().readFileAlloc(T.allocator, file_path, std.math.maxInt(usize));
+    defer T.allocator.free(contents);
+
+    var parsed = try parseCPUTestCase(T.allocator, contents);
+    defer parsed.deinit();
+
+    for (0..parsed.value.len) |i| {
+        if (runTestCase(&parsed.value[i])) |_| {} else |err| {
+            std.debug.print("Failed to run test case {d} for instruction {s}\n", .{ i, hex });
+            return err;
+        }
+    }
+}
+
+const InstrTest = struct {
+    name: []const u8,
+    initial: CPUState,
+    final: CPUState,
+};
+
+// State of CPU used for point-in-time tests
+pub const CPUState = struct {
+    const Self = @This();
+    const Cell = struct { u16, u8 };
+    pc: u16,
+    s: u8,
+    a: u8,
+    x: u8,
+    y: u8,
+    p: Flags,
+    ram: []Cell,
+};
+
+// ref: https://www.nesdev.org/wiki/Instruction_reference
+test "TAX, TAY" {
+    try runTestsForInstruction("aa");
+    try runTestsForInstruction("a8");
+}
