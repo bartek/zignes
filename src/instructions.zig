@@ -2,62 +2,89 @@ const std = @import("std");
 const c = @import("cpu.zig");
 const panic = std.debug.panic;
 
-const OP_CYCLES = [_]i8{
-    // 1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 1
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 2
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 3
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 4
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 5
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 6
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 7
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 8
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 9
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, // A
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // B
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // C
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // D
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // E
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // F
+pub const Op = enum(u8) {
+    TAX,
+    TAY,
+    TSX,
+    TXA,
+    TXS,
+    TYA,
+    BRK,
+    Undefined,
 };
 
-pub const Operation = struct {
-    cycles: i8 = 0,
+// ref: https://www.masswerk.at/6502/6502_instruction_set.html
+//
+// Addressing Mode:
+//
+// Mode               | Meaning / Example
+// -------------------+--------------------------------------------------------------
+// Immediate          | Value is inside the instruction.
+//                    | Example: LDA #$0A  (load A with the literal value $0A)
+//
+// Zero Page          | Instruction gives an 8-bit address in the first 256 bytes.
+//                    | Example: LDA $42
+//
+// Zero Page,X (or Y) | Zero-page address plus the X (or Y) register.
+//                    | Example: LDA $42,X
+//
+// Absolute           | Instruction gives a full 16-bit memory address.
+//                    | Example: LDA $1234
+//
+// Absolute,X (or Y)  | Absolute address plus X (or Y).
+//                    | Example: LDA $1234,X
+//
+// Indirect (various) | Instruction gives a pointer; CPU uses that pointer (plus
+//                    | optional register) to compute the final address.
+//                    | Example: LDA ($40),Y
+//
+// Accumulator / Implied
+//                    | No operand needed; instruction acts directly on A or is
+//                    | self-contained.
+//                    | Example: ASL A
+//
+pub const AddressMode = enum {
+    Immediate,
+    ZeroPage,
+    ZeroPageX,
+    ZeroPageY,
+    Absolute,
+    AbsoluteX,
+    AbsoluteY,
+    IndirectX,
+    IndirectY,
+    Implicit,
+    Implied,
+    Undefined,
 };
 
-pub fn operation(cpu: *c.CPU, opcode: u8) Operation {
-    switch (opcode) {
-        0x0 => {}, // NOOP
-        0xaa => {
-            cpu.X = cpu.A;
-            cpu.setZN(cpu.X);
-        },
-        0xa8 => {
-            cpu.Y = cpu.A;
-            cpu.setZN(cpu.Y);
-        },
-        0xba => {
-            cpu.X = cpu.SP;
-            cpu.setZN(cpu.X);
-        },
-        0x8a => {
-            cpu.A = cpu.X;
-            cpu.setZN(cpu.A);
-        },
-        0x9a => {
-            cpu.SP = cpu.X;
-        },
-        0x98 => {
-            cpu.A = cpu.Y;
-            cpu.setZN(cpu.A);
-        },
-        else => {
-            panic("\n!! not implemented 0x{x}\n", .{opcode});
-        },
+// opcode, addressing mode, cycles
+pub const Instruction = struct { Op, AddressMode, u8 };
+
+// makeLookupTable creates the lookup table for all possible instructions.
+fn makeLookupTable() [256]Instruction {
+    comptime { // guarantee table will be evaluated at compile-time.
+        var instr_lookup_table: [256]Instruction = .{UndefinedInstruction} ** 256;
+
+        instr_lookup_table[0x00] = .{ Op.BRK, AddressMode.Implied, 7 };
+        instr_lookup_table[0xaa] = .{ Op.TAX, AddressMode.Implied, 2 };
+        instr_lookup_table[0xa8] = .{ Op.TAY, AddressMode.Implied, 2 };
+        instr_lookup_table[0xba] = .{ Op.TSX, AddressMode.Implied, 2 };
+        instr_lookup_table[0x8a] = .{ Op.TXA, AddressMode.Implied, 2 };
+        instr_lookup_table[0x9a] = .{ Op.TXS, AddressMode.Implied, 2 };
+        instr_lookup_table[0x98] = .{ Op.TYA, AddressMode.Implied, 2 };
+        return instr_lookup_table;
     }
+}
 
-    return Operation{
-        .cycles = OP_CYCLES[opcode],
-    };
+pub const UndefinedInstruction: Instruction = .{ Op.Undefined, AddressMode.Undefined, 0 };
+const lookup_table = makeLookupTable();
+
+pub fn decodeInstruction(opcode: u8) *const Instruction {
+    return &lookup_table[opcode];
+}
+
+comptime {
+    std.debug.assert(lookup_table.len == 256);
+    std.debug.assert(lookup_table[0xa8][0] == Op.TAY);
 }

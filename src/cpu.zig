@@ -1,6 +1,9 @@
 const std = @import("std");
 const Memory = @import("memory.zig").Memory;
 const instructions = @import("instructions.zig");
+const Instruction = instructions.Instruction;
+const Op = instructions.Op;
+const panic = std.debug.panic;
 
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -62,10 +65,8 @@ pub const CPU = struct {
         }
 
         const opcode = self.fetchOpcode(self.Memory);
-        const instruction = instructions.operation(self, opcode);
+        const instruction = instructions.decodeInstruction(opcode);
 
-        // TODO: Should this be -1 or is that an implementation detail from reference?
-        // Tests should confirm.
         self.Halt += instruction.cycles - 1;
 
         return false;
@@ -92,8 +93,9 @@ pub const CPU = struct {
         }
 
         // exec a single instruction
-        // todo: handle  cycles/interrupts?
-        _ = instructions.operation(self, self.fetchOpcode(self.Memory));
+        const instruction = instructions.decodeInstruction(self.fetchOpcode(self.Memory));
+
+        self.exec(instruction);
 
         return .{ .pc = self.PC, .a = self.A, .x = self.X, .s = self.SP, .y = self.Y, .p = @bitCast(self.P), .ram = final_ram };
     }
@@ -102,6 +104,41 @@ pub const CPU = struct {
         const opcode = mem.read(self.PC);
         self.PC +%= 1;
         return opcode;
+    }
+
+    fn exec(self: *CPU, instruction: *const Instruction) void {
+        const op = instruction[0];
+        switch (op) {
+            Op.TAX => {
+                self.X = self.A;
+                self.setZN(self.X);
+            },
+            Op.TAY => {
+                self.Y = self.A;
+                self.setZN(self.Y);
+            },
+            Op.TSX => {
+                self.X = self.SP;
+                self.setZN(self.X);
+            },
+            Op.TXA => {
+                self.A = self.X;
+                self.setZN(self.A);
+            },
+            Op.TXS => {
+                self.SP = self.X;
+            },
+            Op.TYA => {
+                self.A = self.Y;
+                self.setZN(self.A);
+            },
+            Op.BRK => {
+                // NOOP for now.
+            },
+            Op.Undefined => {
+                panic("\n!! not implemented 0x{x}\n", .{instruction[2]});
+            },
+        }
     }
 
     fn setFlag(self: *CPU, flag: Flags, value: bool) void {
@@ -219,4 +256,15 @@ test "TAX, TAY, TSX, TXA, TXS, TYA" {
     try runTestsForInstruction("8a");
     try runTestsForInstruction("9a");
     try runTestsForInstruction("98");
+}
+
+test "LDA" {
+    //try runTestsForInstruction("a9");
+    //try runTestsForInstruction("a5");
+    //try runTestsForInstruction("b5");
+    //try runTestsForInstruction("ad");
+    //try runTestsForInstruction("bd");
+    //try runTestsForInstruction("b9");
+    //try runTestsForInstruction("a1");
+    //try runTestsForInstruction("b1");
 }
