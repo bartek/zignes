@@ -212,7 +212,11 @@ pub const CPUState = struct {
 };
 
 // ref: https://www.nesdev.org/wiki/Instruction_reference
-test "TAX, TAY" {
+test "TAX, TAY, TSX, TXA, TXS, TYA" {
     try runTestsForInstruction("aa");
     try runTestsForInstruction("a8");
+    try runTestsForInstruction("ba");
+    try runTestsForInstruction("8a");
+    try runTestsForInstruction("9a");
+    try runTestsForInstruction("98");
 }
