@@ -214,5 +214,5 @@ pub const CPUState = struct {
 // ref: https://www.nesdev.org/wiki/Instruction_reference
 test "TAX, TAY" {
     try runTestsForInstruction("aa");
-    //try runTestsForInstruction("a8");
+    try runTestsForInstruction("a8");
 }

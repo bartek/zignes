@@ -33,6 +33,11 @@ pub fn operation(cpu: *c.CPU, opcode: u8) Operation {
             cpu.X = cpu.A;
             cpu.setZN(cpu.X);
         },
+        0xa8 => {
+            cpu.Y = cpu.A;
+            cpu.setZN(cpu.Y);
+        },
+
         else => {
             panic("\n!! not implemented 0x{x}\n", .{opcode});
         },
