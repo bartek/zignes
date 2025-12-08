@@ -11,17 +11,10 @@ pub const Memory = struct {
     }
 
     pub fn read(self: *Memory, addr: u16) u8 {
-        switch (addr) {
-            0x0000...0x1FFF => {
-                return self.Ram[addr % 0x0800];
-            },
-            else => {
-                return self.Ram[addr % 0x0800];
-            },
-        }
+        return self.Ram[addr];
     }
 
     pub fn write(self: *Memory, addr: u16, data: u8) void {
-        self.Ram[addr % 0x0800] = data;
+        self.Ram[addr] = data;
     }
 };

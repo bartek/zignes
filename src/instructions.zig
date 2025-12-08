@@ -3,13 +3,19 @@ const c = @import("cpu.zig");
 const panic = std.debug.panic;
 
 pub const Op = enum(u8) {
+    BRK,
+    LDA,
+    LDX,
+    LDY,
+    STA,
+    STX,
+    STY,
     TAX,
     TAY,
     TSX,
     TXA,
     TXS,
     TYA,
-    BRK,
     Undefined,
 };
 
@@ -66,6 +72,50 @@ fn makeLookupTable() [256]Instruction {
     comptime { // guarantee table will be evaluated at compile-time.
         var instr_lookup_table: [256]Instruction = .{UndefinedInstruction} ** 256;
 
+        // Load A
+        instr_lookup_table[0xa9] = .{ Op.LDA, AddressMode.Immediate, 2 };
+        instr_lookup_table[0xa5] = .{ Op.LDA, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0xb5] = .{ Op.LDA, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0xad] = .{ Op.LDA, AddressMode.Absolute, 4 };
+        instr_lookup_table[0xbd] = .{ Op.LDA, AddressMode.AbsoluteX, 4 };
+        instr_lookup_table[0xb9] = .{ Op.LDA, AddressMode.AbsoluteY, 4 };
+        instr_lookup_table[0xa1] = .{ Op.LDA, AddressMode.IndirectX, 6 };
+        instr_lookup_table[0xb1] = .{ Op.LDA, AddressMode.IndirectY, 5 };
+
+        // Load Y
+        instr_lookup_table[0xa0] = .{ Op.LDY, AddressMode.Immediate, 2 };
+        instr_lookup_table[0xa4] = .{ Op.LDY, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0xb4] = .{ Op.LDY, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0xac] = .{ Op.LDY, AddressMode.Absolute, 4 };
+        instr_lookup_table[0xbc] = .{ Op.LDY, AddressMode.AbsoluteX, 4 };
+
+        // Load X
+        instr_lookup_table[0xa2] = .{ Op.LDX, AddressMode.Immediate, 2 };
+        instr_lookup_table[0xa6] = .{ Op.LDX, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0xb6] = .{ Op.LDX, AddressMode.ZeroPageY, 4 };
+        instr_lookup_table[0xae] = .{ Op.LDX, AddressMode.Absolute, 4 };
+        instr_lookup_table[0xbe] = .{ Op.LDX, AddressMode.AbsoluteY, 3 };
+
+        // Store A
+        instr_lookup_table[0x85] = .{ Op.STA, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0x95] = .{ Op.STA, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0x8d] = .{ Op.STA, AddressMode.Absolute, 4 };
+        instr_lookup_table[0x9d] = .{ Op.STA, AddressMode.AbsoluteX, 5 };
+        instr_lookup_table[0x99] = .{ Op.STA, AddressMode.AbsoluteY, 5 };
+        instr_lookup_table[0x81] = .{ Op.STA, AddressMode.IndirectX, 6 };
+        instr_lookup_table[0x91] = .{ Op.STA, AddressMode.IndirectY, 6 };
+
+        // Store X
+        instr_lookup_table[0x86] = .{ Op.STX, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0x96] = .{ Op.STX, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0x8e] = .{ Op.STX, AddressMode.Absolute, 4 };
+
+        // Store Y
+        instr_lookup_table[0x84] = .{ Op.STY, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0x94] = .{ Op.STY, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0x8c] = .{ Op.STY, AddressMode.Absolute, 4 };
+
+        // Transfer
         instr_lookup_table[0x00] = .{ Op.BRK, AddressMode.Implied, 7 };
         instr_lookup_table[0xaa] = .{ Op.TAX, AddressMode.Implied, 2 };
         instr_lookup_table[0xa8] = .{ Op.TAY, AddressMode.Implied, 2 };

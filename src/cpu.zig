@@ -25,6 +25,7 @@ pub const Interrupt = enum(u8) {
 };
 
 pub const CPU = struct {
+    PageSize: u16 = 256, // Each page in RAM is 256 bytes
     X: u8 = 0, // Register
     Y: u8 = 0, // Register
     A: u8 = 0, // Accumulator
@@ -132,6 +133,30 @@ pub const CPU = struct {
                 self.A = self.Y;
                 self.setZN(self.A);
             },
+            Op.LDA => {
+                const b = self.operator(instruction);
+                self.A = b;
+                self.setZN(b);
+            },
+            Op.LDX => {
+                const b = self.operator(instruction);
+                self.X = b;
+                self.setZN(b);
+            },
+            Op.LDY => {
+                const b = self.operator(instruction);
+                self.Y = b;
+                self.setZN(b);
+            },
+            Op.STA => {
+                self.Memory.write(self.addressOfInstruction(instruction), self.A);
+            },
+            Op.STX => {
+                self.Memory.write(self.addressOfInstruction(instruction), self.X);
+            },
+            Op.STY => {
+                self.Memory.write(self.addressOfInstruction(instruction), self.Y);
+            },
             Op.BRK => {
                 // NOOP for now.
             },
@@ -139,6 +164,97 @@ pub const CPU = struct {
                 panic("\n!! not implemented 0x{x}\n", .{instruction[2]});
             },
         }
+    }
+
+    fn operator(self: *CPU, instruction: *const Instruction) u8 {
+        const addr = self.addressOfInstruction(instruction);
+        return self.Memory.read(addr);
+    }
+
+    fn addressOfInstruction(self: *CPU, instruction: *const Instruction) u16 {
+        const mode = instruction[1];
+        switch (mode) {
+            .Immediate => {
+                // Uses the 8-bit operand itself as the value for the operation, rather
+                // than fetching a value from a memory address.
+                const addr = self.PC;
+                self.PC +%= 1;
+                return addr;
+            },
+            .ZeroPage => {
+                // Fetches the value from an 8-bit address on the zero page.
+                const b = self.nextOp();
+                return b;
+            },
+            .ZeroPageX => {
+                var b: u16 = self.nextOp();
+                b += self.X;
+                b = b % self.PageSize;
+                return b;
+            },
+            .ZeroPageY => {
+                var b: u16 = self.nextOp();
+                b += self.Y;
+                b = b % self.PageSize;
+                return b;
+            },
+            .Absolute => {
+                return self.getAddress16();
+            },
+            .AbsoluteX => {
+                const addr = self.getAddress16();
+                const result, _ = @addWithOverflow(addr, self.X);
+                return result;
+            },
+            .AbsoluteY => {
+                const addr = self.getAddress16();
+                const result, _ = @addWithOverflow(addr, self.Y);
+                return result;
+            },
+            .IndirectX => {
+                // Jump to the address found at the formula
+                // val = PEEK(PEEK((arg + X) % 256) + PEEK((arg + X + 1) % 256) * 256)
+                // Basically .. get the address (from zero page memory) at (arg + X),
+                // then get the next address (wrapping +1 add) from memory
+                // Then bitwise OR to combine into a full address.
+                const addrLow = self.nextOp() +% self.X;
+                const low: u16 = self.Memory.read(addrLow);
+                const addrHi = addrLow +% 1;
+                const high: u16 = self.Memory.read(addrHi);
+                return low | (high << 8);
+            },
+            .IndirectY => {
+                // Different Jump from IndirectX:
+                // val = PEEK(PEEK(arg) + PEEK((arg + 1) % 256) * 256 + Y)
+                // Get the address from zero page memory at arg,
+                // then get the next address (add + 1w/ overflow) from memory
+                // Then bitwise OR to combine into a full address, then add Y.
+                // Basically same as IndirectX but add Y at the end instead of X at the beginning.
+                const addrLow: u8 = self.nextOp();
+                const low: u16 = self.Memory.read(addrLow);
+                const addrHi, _ = @addWithOverflow(addrLow, 1);
+                const high: u16 = self.Memory.read(addrHi);
+                const base_addr = low | (high << 8);
+                return base_addr +% @as(u16, self.Y);
+            },
+            .Implicit => unreachable,
+            .Implied => unreachable,
+            .Undefined => unreachable,
+        }
+    }
+
+    // getAddress16 reads the next two bytes from the program counter and bitwise OR
+    // combines them into their proper positions within a 16-bit address.
+    fn getAddress16(self: *CPU) u16 {
+        const low: u16 = self.nextOp();
+        const high: u16 = self.nextOp();
+        return low | (high << 8);
+    }
+
+    fn nextOp(self: *CPU) u8 {
+        const b = self.Memory.read(self.PC);
+        self.PC +%= 1;
+        return b;
     }
 
     fn setFlag(self: *CPU, flag: Flags, value: bool) void {
@@ -178,7 +294,7 @@ fn parseCPUTestCase(allocator: Allocator, testcase_str: []const u8) !std.json.Pa
 // checking received state against expected.
 fn runTestCase(test_case: *const InstrTest) !void {
     const allocator = std.heap.page_allocator;
-    const ram = try allocator.alloc(u8, 0x800);
+    const ram = try allocator.alloc(u8, 0x10000);
     var memory = Memory{ .Ram = ram };
     var cpu = CPU.init(T.allocator, &memory);
 
@@ -258,13 +374,43 @@ test "TAX, TAY, TSX, TXA, TXS, TYA" {
     try runTestsForInstruction("98");
 }
 
-test "LDA" {
-    //try runTestsForInstruction("a9");
-    //try runTestsForInstruction("a5");
-    //try runTestsForInstruction("b5");
-    //try runTestsForInstruction("ad");
-    //try runTestsForInstruction("bd");
-    //try runTestsForInstruction("b9");
-    //try runTestsForInstruction("a1");
-    //try runTestsForInstruction("b1");
+test "LDA, LDX, LDY" {
+    try runTestsForInstruction("a9");
+    try runTestsForInstruction("a5");
+    try runTestsForInstruction("b5");
+    try runTestsForInstruction("ad");
+    try runTestsForInstruction("bd");
+    try runTestsForInstruction("b9");
+    try runTestsForInstruction("a1");
+    try runTestsForInstruction("b1");
+
+    try runTestsForInstruction("a2");
+    try runTestsForInstruction("a6");
+    try runTestsForInstruction("b6");
+    try runTestsForInstruction("ae");
+    try runTestsForInstruction("be");
+
+    try runTestsForInstruction("a0");
+    try runTestsForInstruction("a4");
+    try runTestsForInstruction("b4");
+    try runTestsForInstruction("ac");
+    try runTestsForInstruction("bc");
+}
+
+test "STA, STX, STY" {
+    try runTestsForInstruction("85");
+    try runTestsForInstruction("95");
+    try runTestsForInstruction("8d");
+    try runTestsForInstruction("9d");
+    try runTestsForInstruction("99");
+    try runTestsForInstruction("81");
+    try runTestsForInstruction("91");
+
+    try runTestsForInstruction("86");
+    try runTestsForInstruction("96");
+    try runTestsForInstruction("8e");
+
+    try runTestsForInstruction("84");
+    try runTestsForInstruction("94");
+    try runTestsForInstruction("8c");
 }
