@@ -12,6 +12,7 @@ pub const Op = enum(u8) {
     BRK,
     BVC,
     BVS,
+    JMP,
     LDA,
     LDX,
     LDY,
@@ -64,6 +65,7 @@ pub const AddressMode = enum {
     Immediate,
     Implicit,
     Implied,
+    Indirect,
     IndirectX,
     IndirectY,
     Relative,
@@ -114,6 +116,10 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0x10] = .{ Op.BPL, AddressMode.Relative, 2 };
         instr_lookup_table[0x50] = .{ Op.BVC, AddressMode.Relative, 2 };
         instr_lookup_table[0x70] = .{ Op.BVS, AddressMode.Relative, 2 };
+
+        // Jumps
+        instr_lookup_table[0x4c] = .{ Op.JMP, AddressMode.Absolute, 3 };
+        instr_lookup_table[0x6c] = .{ Op.JMP, AddressMode.Indirect, 5 };
 
         // Store A
         instr_lookup_table[0x85] = .{ Op.STA, AddressMode.ZeroPage, 3 };

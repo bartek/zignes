@@ -189,6 +189,33 @@ pub const CPU = struct {
             Op.STY => {
                 self.Memory.write(self.addressOfInstruction(instruction), self.Y);
             },
+            Op.JMP => {
+                const mode = instruction[1];
+                switch (mode) {
+                    .Absolute => {
+                        self.PC = self.getAddress16();
+                    },
+                    .Indirect => {
+                        const addr = self.getAddress16();
+                        const low: u16 = self.Memory.read(addr);
+                        var hi_addr: u16 = addr + 1;
+                        // 6502 bug: if the low byte is $FF, the high byte wraps
+                        // around to the beginning of the same page.
+                        // Example: JMP ($30FF) will read the low byte from $30FF
+                        // and the high byte from $3000.
+                        // This is emulated here.
+                        // Ref: https://www.nesdev.org/wiki/6502_addressing_modes#IndirectX
+                        if ((addr & 0x00FF) == 0x00FF) {
+                            hi_addr = addr & 0xFF00;
+                        }
+                        const high: u16 = self.Memory.read(hi_addr);
+                        self.PC = low | (high << 8);
+                    },
+                    else => {
+                        panic("\n!! not implemented JMP mode 0x{x}\n", .{mode});
+                    },
+                }
+            },
             Op.BRK => {
                 // NOOP for now.
             },
@@ -246,6 +273,7 @@ pub const CPU = struct {
                 const result, _ = @addWithOverflow(addr, self.Y);
                 return result;
             },
+            .Indirect => unreachable, // not handled here (yet?)
             .IndirectX => {
                 // Jump to the address found at the formula
                 // val = PEEK(PEEK((arg + X) % 256) + PEEK((arg + X + 1) % 256) * 256)
@@ -475,4 +503,9 @@ test "BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS" {
     try runTestsForInstruction("10");
     try runTestsForInstruction("50");
     try runTestsForInstruction("70");
+}
+
+test "JMP" {
+    try runTestsForInstruction("4c");
+    try runTestsForInstruction("6c");
 }
