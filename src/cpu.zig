@@ -216,6 +216,12 @@ pub const CPU = struct {
                     },
                 }
             },
+            Op.JSR => {
+                const return_addr = self.PC + 2;
+                self.push(@intCast(return_addr >> 8));
+                self.push(@intCast(return_addr & 0xFF));
+                self.PC = self.addressOfInstruction(instruction);
+            },
             Op.BRK => {
                 // NOOP for now.
             },
@@ -318,6 +324,12 @@ pub const CPU = struct {
         const b = self.Memory.read(self.PC);
         self.PC +%= 1;
         return b;
+    }
+
+    // push a byte onto the stack and then decrement the stack pointer.
+    fn push(self: *CPU, b: u8) void {
+        self.Memory.write(self.SP, b);
+        self.SP -%= 1;
     }
 
     fn getNegative(self: *CPU) bool {
@@ -505,7 +517,8 @@ test "BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS" {
     try runTestsForInstruction("70");
 }
 
-test "JMP" {
+test "JMP, JSR" {
     try runTestsForInstruction("4c");
     try runTestsForInstruction("6c");
+    try runTestsForInstruction("20");
 }

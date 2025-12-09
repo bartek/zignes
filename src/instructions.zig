@@ -13,6 +13,7 @@ pub const Op = enum(u8) {
     BVC,
     BVS,
     JMP,
+    JSR,
     LDA,
     LDX,
     LDY,
@@ -120,6 +121,7 @@ fn makeLookupTable() [256]Instruction {
         // Jumps
         instr_lookup_table[0x4c] = .{ Op.JMP, AddressMode.Absolute, 3 };
         instr_lookup_table[0x6c] = .{ Op.JMP, AddressMode.Indirect, 5 };
+        instr_lookup_table[0x20] = .{ Op.JSR, AddressMode.Absolute, 6 };
 
         // Store A
         instr_lookup_table[0x85] = .{ Op.STA, AddressMode.ZeroPage, 3 };
