@@ -68,7 +68,7 @@ pub const CPU = struct {
         const opcode = self.fetchOpcode(self.Memory);
         const instruction = instructions.decodeInstruction(opcode);
 
-        self.Halt += instruction.cycles - 1;
+        self.Halt += instruction[2] - 1;
 
         return false;
     }
@@ -107,9 +107,41 @@ pub const CPU = struct {
         return opcode;
     }
 
+    // conditionalBranch performs a conditional branch based on the provided condition.
+    fn conditionalBranch(self: *CPU, condition: bool) void {
+        if (condition) {
+            self.Halt += 1; // +1 if branch taken
+            // PC = PC + 2 + memory (signed)
+
+            // The offset is signed, meaning it may be a jump forward or backward.
+            const offset: i8 = @bitCast(self.nextOp());
+
+            const current_pc: i32 = self.PC;
+            const new_pc: u32 = @bitCast(current_pc + offset);
+            self.PC = @truncate(new_pc);
+
+            // And add another cycle if branch crosses page boundary
+            // High byte of the address (& 0xff00) identifies the page.
+            if (current_pc & 0xff00 != new_pc & 0xff00) {
+                self.Halt += 1;
+            }
+        } else {
+            self.PC +%= 1;
+        }
+    }
+
     fn exec(self: *CPU, instruction: *const Instruction) void {
         const op = instruction[0];
         switch (op) {
+            Op.BCC => self.conditionalBranch(!self.getCarry()),
+            Op.BCS => self.conditionalBranch(self.getCarry()),
+            Op.BEQ => self.conditionalBranch(self.getZero()),
+            Op.BMI => self.conditionalBranch(self.getNegative()),
+            Op.BNE => self.conditionalBranch(!self.getZero()),
+            Op.BPL => self.conditionalBranch(!self.getNegative()),
+            Op.BVC => self.conditionalBranch(!self.getOverflow()),
+            Op.BVS => self.conditionalBranch(self.getOverflow()),
+
             Op.TAX => {
                 self.X = self.A;
                 self.setZN(self.X);
@@ -206,6 +238,9 @@ pub const CPU = struct {
                 const result, _ = @addWithOverflow(addr, self.X);
                 return result;
             },
+            // Relative used only by branch instructions, code should not reach here as
+            // never obtaining address of instruction
+            .Relative => unreachable,
             .AbsoluteY => {
                 const addr = self.getAddress16();
                 const result, _ = @addWithOverflow(addr, self.Y);
@@ -255,6 +290,22 @@ pub const CPU = struct {
         const b = self.Memory.read(self.PC);
         self.PC +%= 1;
         return b;
+    }
+
+    fn getNegative(self: *CPU) bool {
+        return (self.P & flagNegative) != 0;
+    }
+
+    fn getZero(self: *CPU) bool {
+        return (self.P & flagZero) != 0;
+    }
+
+    fn getOverflow(self: *CPU) bool {
+        return (self.P & flagOverflow) != 0;
+    }
+
+    fn getCarry(self: *CPU) bool {
+        return (self.P & flagCarry) != 0;
     }
 
     fn setFlag(self: *CPU, flag: Flags, value: bool) void {
@@ -413,4 +464,15 @@ test "STA, STX, STY" {
     try runTestsForInstruction("84");
     try runTestsForInstruction("94");
     try runTestsForInstruction("8c");
+}
+
+test "BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS" {
+    try runTestsForInstruction("90");
+    try runTestsForInstruction("b0");
+    try runTestsForInstruction("f0");
+    try runTestsForInstruction("30");
+    try runTestsForInstruction("d0");
+    try runTestsForInstruction("10");
+    try runTestsForInstruction("50");
+    try runTestsForInstruction("70");
 }

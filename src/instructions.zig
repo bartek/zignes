@@ -3,7 +3,15 @@ const c = @import("cpu.zig");
 const panic = std.debug.panic;
 
 pub const Op = enum(u8) {
+    BCC,
+    BCS,
+    BEQ,
+    BMI,
+    BNE,
+    BPL,
     BRK,
+    BVC,
+    BVS,
     LDA,
     LDX,
     LDY,
@@ -50,17 +58,18 @@ pub const Op = enum(u8) {
 //                    | Example: ASL A
 //
 pub const AddressMode = enum {
-    Immediate,
-    ZeroPage,
-    ZeroPageX,
-    ZeroPageY,
     Absolute,
     AbsoluteX,
     AbsoluteY,
-    IndirectX,
-    IndirectY,
+    Immediate,
     Implicit,
     Implied,
+    IndirectX,
+    IndirectY,
+    Relative,
+    ZeroPage,
+    ZeroPageX,
+    ZeroPageY,
     Undefined,
 };
 
@@ -95,6 +104,16 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0xb6] = .{ Op.LDX, AddressMode.ZeroPageY, 4 };
         instr_lookup_table[0xae] = .{ Op.LDX, AddressMode.Absolute, 4 };
         instr_lookup_table[0xbe] = .{ Op.LDX, AddressMode.AbsoluteY, 3 };
+
+        // Branch
+        instr_lookup_table[0x90] = .{ Op.BCC, AddressMode.Relative, 2 };
+        instr_lookup_table[0xb0] = .{ Op.BCS, AddressMode.Relative, 2 };
+        instr_lookup_table[0xf0] = .{ Op.BEQ, AddressMode.Relative, 2 };
+        instr_lookup_table[0x30] = .{ Op.BMI, AddressMode.Relative, 2 };
+        instr_lookup_table[0xd0] = .{ Op.BNE, AddressMode.Relative, 2 };
+        instr_lookup_table[0x10] = .{ Op.BPL, AddressMode.Relative, 2 };
+        instr_lookup_table[0x50] = .{ Op.BVC, AddressMode.Relative, 2 };
+        instr_lookup_table[0x70] = .{ Op.BVS, AddressMode.Relative, 2 };
 
         // Store A
         instr_lookup_table[0x85] = .{ Op.STA, AddressMode.ZeroPage, 3 };
