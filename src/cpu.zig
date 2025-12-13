@@ -229,7 +229,22 @@ pub const CPU = struct {
                 self.PC = self.getAddress16();
             },
             Op.BRK => {
-                // NOOP for now.
+                self.PC +%= 1;
+
+                // push PC + 1 high byte, then low byte (PC already incremented by 1)
+                self.push(@intCast(self.PC >> 8));
+                self.push(@intCast(self.PC & 0xFF));
+
+                // push status flags with break and bit 5 set (NV11DIZC)
+                self.push(self.P | flagBreak | (1 << 5));
+
+                // set interrupt disable flag
+                self.P |= flagInterrupt;
+
+                // jump to IRQ vector at $FFFE
+                const lo: u16 = self.Memory.read(0xFFFE);
+                const hi: u16 = self.Memory.read(0xFFFF);
+                self.PC = (hi << 8) | lo;
             },
             Op.Undefined => {
                 panic("\n!! not implemented 0x{x}\n", .{instruction[2]});
@@ -531,9 +546,11 @@ test "BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS" {
     try runTestsForInstruction("70");
 }
 
-test "JMP, JSR, RTS" {
+test "JMP, JSR, RTS, BRK" {
     try runTestsForInstruction("4c");
     try runTestsForInstruction("6c");
     try runTestsForInstruction("20");
     try runTestsForInstruction("60");
+
+    try runTestsForInstruction("00");
 }
