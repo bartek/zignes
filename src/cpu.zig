@@ -189,6 +189,12 @@ pub const CPU = struct {
             Op.STY => {
                 self.Memory.write(self.addressOfInstruction(instruction), self.Y);
             },
+            Op.RTS => {
+                const low: u16 = self.pop();
+                const high: u16 = self.pop();
+                self.PC = (high << 8) | low;
+                self.PC +%= 1;
+            },
             Op.JMP => {
                 const mode = instruction[1];
                 switch (mode) {
@@ -220,7 +226,7 @@ pub const CPU = struct {
                 const return_addr = self.PC + 2;
                 self.push(@intCast(return_addr >> 8));
                 self.push(@intCast(return_addr & 0xFF));
-                self.PC = self.addressOfInstruction(instruction);
+                self.PC = self.getAddress16();
             },
             Op.BRK => {
                 // NOOP for now.
@@ -328,8 +334,16 @@ pub const CPU = struct {
 
     // push a byte onto the stack and then decrement the stack pointer.
     fn push(self: *CPU, b: u8) void {
-        self.Memory.write(self.SP, b);
+        self.Memory.write(0x100 + @as(u16, self.SP), b);
         self.SP -%= 1;
+    }
+
+    // pop a byte from the stack and increment the stack pointer.
+    // note the stack lives in page 0x100-0x1FF. The CPI has the 8-bit stack pointer
+    // and the address is formed like so: $0100 + SP
+    fn pop(self: *CPU) u8 {
+        self.SP +%= 1;
+        return self.Memory.read(0x100 + @as(u16, self.SP));
     }
 
     fn getNegative(self: *CPU) bool {
@@ -517,8 +531,9 @@ test "BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS" {
     try runTestsForInstruction("70");
 }
 
-test "JMP, JSR" {
+test "JMP, JSR, RTS" {
     try runTestsForInstruction("4c");
     try runTestsForInstruction("6c");
     try runTestsForInstruction("20");
+    try runTestsForInstruction("60");
 }

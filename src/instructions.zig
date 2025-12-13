@@ -17,6 +17,7 @@ pub const Op = enum(u8) {
     LDA,
     LDX,
     LDY,
+    RTS,
     STA,
     STX,
     STY,
@@ -122,6 +123,7 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0x4c] = .{ Op.JMP, AddressMode.Absolute, 3 };
         instr_lookup_table[0x6c] = .{ Op.JMP, AddressMode.Indirect, 5 };
         instr_lookup_table[0x20] = .{ Op.JSR, AddressMode.Absolute, 6 };
+        instr_lookup_table[0x60] = .{ Op.RTS, AddressMode.Implied, 6 };
 
         // Store A
         instr_lookup_table[0x85] = .{ Op.STA, AddressMode.ZeroPage, 3 };
