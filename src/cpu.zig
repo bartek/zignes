@@ -228,10 +228,21 @@ pub const CPU = struct {
                 self.push(@intCast(return_addr & 0xFF));
                 self.PC = self.getAddress16();
             },
+            Op.RTI => {
+                // pull status flags (ignore bits 4 (break) and 5 (unused). These don't
+                // exist as physical registers and are only artifacts in transient
+                // scenarios. Thus, they are discarded on pull)
+                self.P = (self.pop() & 0xCF) | (self.P & 0x30);
+
+                // pull PC low byte, then high byte
+                const lo: u16 = self.pop();
+                const hi: u16 = self.pop();
+                self.PC = (hi << 8) | lo;
+            },
             Op.BRK => {
                 self.PC +%= 1;
 
-                // push PC + 1 high byte, then low byte (PC already incremented by 1)
+                // push PC + 1 high byte, then low byte
                 self.push(@intCast(self.PC >> 8));
                 self.push(@intCast(self.PC & 0xFF));
 
@@ -546,11 +557,11 @@ test "BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS" {
     try runTestsForInstruction("70");
 }
 
-test "JMP, JSR, RTS, BRK" {
+test "JMP, JSR, RTS, BRK, RTI" {
     try runTestsForInstruction("4c");
     try runTestsForInstruction("6c");
     try runTestsForInstruction("20");
     try runTestsForInstruction("60");
-
     try runTestsForInstruction("00");
+    try runTestsForInstruction("40");
 }

@@ -10,6 +10,7 @@ pub const Op = enum(u8) {
     BNE,
     BPL,
     BRK,
+    RTI,
     BVC,
     BVS,
     JMP,
@@ -124,6 +125,7 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0x6c] = .{ Op.JMP, AddressMode.Indirect, 5 };
         instr_lookup_table[0x20] = .{ Op.JSR, AddressMode.Absolute, 6 };
         instr_lookup_table[0x60] = .{ Op.RTS, AddressMode.Implied, 6 };
+        instr_lookup_table[0x40] = .{ Op.RTI, AddressMode.Implied, 6 };
 
         // Store A
         instr_lookup_table[0x85] = .{ Op.STA, AddressMode.ZeroPage, 3 };
