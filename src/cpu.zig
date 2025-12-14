@@ -135,8 +135,20 @@ pub const CPU = struct {
         switch (op) {
             Op.ADC => self.adc(self.operator(instruction)),
             Op.SBC => self.adc(~self.operator(instruction)),
-            Op.INC => {},
-            Op.DEC => {},
+            Op.INC => {
+                const addr = self.addressOfInstruction(instruction);
+                var val: u8 = self.Memory.read(addr);
+                val +%= 1;
+                self.Memory.write(addr, val);
+                self.setZN(val);
+            },
+            Op.DEC => {
+                const addr = self.addressOfInstruction(instruction);
+                var val: u8 = self.Memory.read(addr);
+                val -%= 1;
+                self.Memory.write(addr, val);
+                self.setZN(val);
+            },
             Op.INX => {},
             Op.DEX => {},
             Op.INY => {},
@@ -633,4 +645,13 @@ test "ADC, SBC, INC, DEC, INX, DEX, INY, DEY" {
     try runTestsForInstruction("f9");
     try runTestsForInstruction("e1");
     try runTestsForInstruction("f1");
+
+    try runTestsForInstruction("e6");
+    try runTestsForInstruction("f6");
+    try runTestsForInstruction("ee");
+    try runTestsForInstruction("fe");
+    try runTestsForInstruction("c6");
+    try runTestsForInstruction("d6");
+    try runTestsForInstruction("ce");
+    try runTestsForInstruction("de");
 }
