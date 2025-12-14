@@ -3,6 +3,7 @@ const c = @import("cpu.zig");
 const panic = std.debug.panic;
 
 pub const Op = enum(u8) {
+    ADC,
     BCC,
     BCS,
     BEQ,
@@ -12,6 +13,12 @@ pub const Op = enum(u8) {
     BRK,
     BVC,
     BVS,
+    DEC,
+    DEX,
+    DEY,
+    INC,
+    INX,
+    INY,
     JMP,
     JSR,
     LDA,
@@ -19,10 +26,11 @@ pub const Op = enum(u8) {
     LDY,
     PHA,
     PHP,
-    PLP,
     PLA,
+    PLP,
     RTI,
     RTS,
+    SBC,
     STA,
     STX,
     STY,
@@ -89,6 +97,16 @@ pub const Instruction = struct { Op, AddressMode, u8 };
 fn makeLookupTable() [256]Instruction {
     comptime { // guarantee table will be evaluated at compile-time.
         var instr_lookup_table: [256]Instruction = .{UndefinedInstruction} ** 256;
+
+        // Arithmetic (ALU)
+        instr_lookup_table[0x69] = .{ Op.ADC, AddressMode.Immediate, 2 };
+        instr_lookup_table[0x65] = .{ Op.ADC, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0x75] = .{ Op.ADC, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0x6d] = .{ Op.ADC, AddressMode.Absolute, 4 };
+        instr_lookup_table[0x7d] = .{ Op.ADC, AddressMode.AbsoluteX, 4 };
+        instr_lookup_table[0x79] = .{ Op.ADC, AddressMode.AbsoluteY, 4 };
+        instr_lookup_table[0x61] = .{ Op.ADC, AddressMode.IndirectX, 6 };
+        instr_lookup_table[0x71] = .{ Op.ADC, AddressMode.IndirectY, 5 };
 
         // Load A
         instr_lookup_table[0xa9] = .{ Op.LDA, AddressMode.Immediate, 2 };

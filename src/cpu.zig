@@ -133,6 +133,14 @@ pub const CPU = struct {
     fn exec(self: *CPU, instruction: *const Instruction) void {
         const op = instruction[0];
         switch (op) {
+            Op.ADC => self.adc(self.operator(instruction)),
+            Op.SBC => {},
+            Op.INC => {},
+            Op.DEC => {},
+            Op.INX => {},
+            Op.DEX => {},
+            Op.INY => {},
+            Op.DEY => {},
             Op.BCC => self.conditionalBranch(!self.getCarry()),
             Op.BCS => self.conditionalBranch(self.getCarry()),
             Op.BEQ => self.conditionalBranch(self.getZero()),
@@ -279,6 +287,15 @@ pub const CPU = struct {
         }
     }
 
+    // adc adds carry flag and memory (arg) value to accumulator. Then sets flags.
+    fn adc(self: *CPU, arg: u8) void {
+        const v: u16 = @as(u16, self.A) + @as(u16, arg) + @intFromBool(self.getCarry());
+        self.setZN(v);
+        self.setCarry(v);
+        self.setOverflow(((self.A ^ v) & (arg ^ v) & 0x80) != 0);
+        self.A = @truncate(v);
+    }
+
     fn operator(self: *CPU, instruction: *const Instruction) u8 {
         const addr = self.addressOfInstruction(instruction);
         return self.Memory.read(addr);
@@ -412,17 +429,26 @@ pub const CPU = struct {
         }
     }
 
-    pub fn setZero(self: *CPU, value: u8) void {
-        self.setFlag(flagZero, value == 0);
+    // setZero accepts a full 16-bit result and sets zero based on the low byte.
+    fn setZero(self: *CPU, value: u16) void {
+        self.setFlag(flagZero, (value & 0xff) == 0);
     }
 
-    pub fn setNegative(self: *CPU, value: u8) void {
+    fn setNegative(self: *CPU, value: u16) void {
         self.setFlag(flagNegative, value & 0x80 != 0);
     }
 
-    pub fn setZN(self: *CPU, value: u8) void {
+    fn setZN(self: *CPU, value: u16) void {
         self.setZero(value);
         self.setNegative(value);
+    }
+
+    fn setCarry(self: *CPU, value: u16) void {
+        self.setFlag(flagCarry, value > 0xFF);
+    }
+
+    fn setOverflow(self: *CPU, value: bool) void {
+        self.setFlag(flagOverflow, value);
     }
 };
 
@@ -587,4 +613,15 @@ test "PHA, PHP, PLA, PLP" {
     try runTestsForInstruction("08");
     try runTestsForInstruction("68");
     try runTestsForInstruction("28");
+}
+
+test "ADC, SBC, INC, DEC, INX, DEX, INY, DEY" {
+    try runTestsForInstruction("69");
+    try runTestsForInstruction("65");
+    try runTestsForInstruction("75");
+    try runTestsForInstruction("6d");
+    try runTestsForInstruction("7d");
+    try runTestsForInstruction("79");
+    try runTestsForInstruction("61");
+    try runTestsForInstruction("71");
 }
