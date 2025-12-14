@@ -149,10 +149,22 @@ pub const CPU = struct {
                 self.Memory.write(addr, val);
                 self.setZN(val);
             },
-            Op.INX => {},
-            Op.DEX => {},
-            Op.INY => {},
-            Op.DEY => {},
+            Op.INX => {
+                self.X +%= 1;
+                self.setZN(self.X);
+            },
+            Op.DEX => {
+                self.X -%= 1;
+                self.setZN(self.X);
+            },
+            Op.INY => {
+                self.Y +%= 1;
+                self.setZN(self.Y);
+            },
+            Op.DEY => {
+                self.Y -%= 1;
+                self.setZN(self.Y);
+            },
             Op.BCC => self.conditionalBranch(!self.getCarry()),
             Op.BCS => self.conditionalBranch(self.getCarry()),
             Op.BEQ => self.conditionalBranch(self.getZero()),
@@ -654,4 +666,9 @@ test "ADC, SBC, INC, DEC, INX, DEX, INY, DEY" {
     try runTestsForInstruction("d6");
     try runTestsForInstruction("ce");
     try runTestsForInstruction("de");
+
+    try runTestsForInstruction("e8");
+    try runTestsForInstruction("ca");
+    try runTestsForInstruction("c8");
+    try runTestsForInstruction("88");
 }

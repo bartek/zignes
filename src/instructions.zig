@@ -124,6 +124,11 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0xce] = .{ Op.DEC, AddressMode.Absolute, 6 };
         instr_lookup_table[0xde] = .{ Op.DEC, AddressMode.AbsoluteX, 7 };
 
+        instr_lookup_table[0xca] = .{ Op.DEX, AddressMode.Implied, 2 };
+        instr_lookup_table[0x88] = .{ Op.DEY, AddressMode.Implied, 2 };
+        instr_lookup_table[0xe8] = .{ Op.INX, AddressMode.Implied, 2 };
+        instr_lookup_table[0xc8] = .{ Op.INY, AddressMode.Implied, 2 };
+
         // Load A
         instr_lookup_table[0xa9] = .{ Op.LDA, AddressMode.Immediate, 2 };
         instr_lookup_table[0xa5] = .{ Op.LDA, AddressMode.ZeroPage, 3 };
