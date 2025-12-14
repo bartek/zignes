@@ -134,7 +134,7 @@ pub const CPU = struct {
         const op = instruction[0];
         switch (op) {
             Op.ADC => self.adc(self.operator(instruction)),
-            Op.SBC => {},
+            Op.SBC => self.adc(~self.operator(instruction)),
             Op.INC => {},
             Op.DEC => {},
             Op.INX => {},
@@ -624,4 +624,13 @@ test "ADC, SBC, INC, DEC, INX, DEX, INY, DEY" {
     try runTestsForInstruction("79");
     try runTestsForInstruction("61");
     try runTestsForInstruction("71");
+
+    try runTestsForInstruction("e9");
+    try runTestsForInstruction("e5");
+    try runTestsForInstruction("f5");
+    try runTestsForInstruction("ed");
+    try runTestsForInstruction("fd");
+    try runTestsForInstruction("f9");
+    try runTestsForInstruction("e1");
+    try runTestsForInstruction("f1");
 }

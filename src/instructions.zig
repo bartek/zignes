@@ -107,6 +107,14 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0x79] = .{ Op.ADC, AddressMode.AbsoluteY, 4 };
         instr_lookup_table[0x61] = .{ Op.ADC, AddressMode.IndirectX, 6 };
         instr_lookup_table[0x71] = .{ Op.ADC, AddressMode.IndirectY, 5 };
+        instr_lookup_table[0xe9] = .{ Op.SBC, AddressMode.Immediate, 2 };
+        instr_lookup_table[0xe5] = .{ Op.SBC, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0xf5] = .{ Op.SBC, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0xed] = .{ Op.SBC, AddressMode.Absolute, 4 };
+        instr_lookup_table[0xfd] = .{ Op.SBC, AddressMode.AbsoluteX, 4 };
+        instr_lookup_table[0xf9] = .{ Op.SBC, AddressMode.AbsoluteY, 4 };
+        instr_lookup_table[0xe1] = .{ Op.SBC, AddressMode.IndirectX, 6 };
+        instr_lookup_table[0xf1] = .{ Op.SBC, AddressMode.IndirectY, 5 };
 
         // Load A
         instr_lookup_table[0xa9] = .{ Op.LDA, AddressMode.Immediate, 2 };
