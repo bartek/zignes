@@ -10,7 +10,6 @@ pub const Op = enum(u8) {
     BNE,
     BPL,
     BRK,
-    RTI,
     BVC,
     BVS,
     JMP,
@@ -18,6 +17,11 @@ pub const Op = enum(u8) {
     LDA,
     LDX,
     LDY,
+    PHA,
+    PHP,
+    PLP,
+    PLA,
+    RTI,
     RTS,
     STA,
     STX,
@@ -126,6 +130,12 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0x20] = .{ Op.JSR, AddressMode.Absolute, 6 };
         instr_lookup_table[0x60] = .{ Op.RTS, AddressMode.Implied, 6 };
         instr_lookup_table[0x40] = .{ Op.RTI, AddressMode.Implied, 6 };
+
+        // Stack
+        instr_lookup_table[0x48] = .{ Op.PHA, AddressMode.Implied, 3 };
+        instr_lookup_table[0x08] = .{ Op.PHP, AddressMode.Implied, 3 };
+        instr_lookup_table[0x68] = .{ Op.PLA, AddressMode.Implied, 4 };
+        instr_lookup_table[0x28] = .{ Op.PLP, AddressMode.Implied, 4 };
 
         // Store A
         instr_lookup_table[0x85] = .{ Op.STA, AddressMode.ZeroPage, 3 };

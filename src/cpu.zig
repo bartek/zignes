@@ -175,6 +175,22 @@ pub const CPU = struct {
                 self.X = b;
                 self.setZN(b);
             },
+            Op.PLP => {
+                self.P = (self.pop() & 0xCF) | (self.P & 0x30);
+            },
+            Op.PHP => {
+                // Store byte to stack containing status flags with break and bit 5 set (order is NV11DIZC)
+                self.push(self.P | flagBreak | (1 << 5));
+            },
+            Op.PLA => {
+                self.A = self.pop();
+                self.setZN(self.A);
+            },
+            Op.PHA => {
+                const addr = (0x100 +% @as(u16, self.SP));
+                self.Memory.write(addr, self.A);
+                self.SP = self.SP -% 1;
+            },
             Op.LDY => {
                 const b = self.operator(instruction);
                 self.Y = b;
@@ -564,4 +580,11 @@ test "JMP, JSR, RTS, BRK, RTI" {
     try runTestsForInstruction("60");
     try runTestsForInstruction("00");
     try runTestsForInstruction("40");
+}
+
+test "PHA, PHP, PLA, PLP" {
+    try runTestsForInstruction("48");
+    try runTestsForInstruction("08");
+    try runTestsForInstruction("68");
+    try runTestsForInstruction("28");
 }
