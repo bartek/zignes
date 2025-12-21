@@ -1,5 +1,5 @@
 const std = @import("std");
-const Memory = @import("memory.zig").Memory;
+const Bus = @import("bus.zig").Bus;
 const instructions = @import("instructions.zig");
 const Instruction = instructions.Instruction;
 const Op = instructions.Op;
@@ -39,12 +39,12 @@ pub const CPU = struct {
     interrupt: Interrupt = .none,
 
     allocator: Allocator,
-    Memory: *Memory,
+    Bus: *Bus,
 
-    pub fn init(allocator: Allocator, mem: *Memory) CPU {
+    pub fn init(allocator: Allocator, mem: *Bus) CPU {
         return CPU{
             .allocator = allocator,
-            .Memory = mem,
+            .Bus = mem,
         };
     }
 
@@ -65,7 +65,7 @@ pub const CPU = struct {
             else => {},
         }
 
-        const opcode = self.fetchOpcode(self.Memory);
+        const opcode = self.fetchOpcode(self.Bus);
         const instruction = instructions.decodeInstruction(opcode);
 
         self.Halt += instruction[2] - 1;
@@ -82,7 +82,7 @@ pub const CPU = struct {
         self.P = @bitCast(initial_state.p);
 
         for (initial_state.ram) |entry| {
-            self.Memory.write(entry[0], entry[1]);
+            self.Bus.write(entry[0], entry[1]);
         }
 
         var final_ram = try self.allocator.alloc(struct { u16, u8 }, initial_state.ram.len);
@@ -90,18 +90,18 @@ pub const CPU = struct {
             const entry = &initial_state.ram[i];
             const addr = entry[0];
             assert(i < final_ram.len);
-            final_ram[i] = .{ entry[0], self.Memory.read(addr) };
+            final_ram[i] = .{ entry[0], self.Bus.read(addr) };
         }
 
         // exec a single instruction
-        const instruction = instructions.decodeInstruction(self.fetchOpcode(self.Memory));
+        const instruction = instructions.decodeInstruction(self.fetchOpcode(self.Bus));
 
         self.exec(instruction);
 
         return .{ .pc = self.PC, .a = self.A, .x = self.X, .s = self.SP, .y = self.Y, .p = @bitCast(self.P), .ram = final_ram };
     }
 
-    fn fetchOpcode(self: *CPU, mem: *Memory) u8 {
+    fn fetchOpcode(self: *CPU, mem: *Bus) u8 {
         const opcode = mem.read(self.PC);
         self.PC +%= 1;
         return opcode;
@@ -137,16 +137,16 @@ pub const CPU = struct {
             Op.SBC => self.adc(~self.operator(instruction)),
             Op.INC => {
                 const addr = self.addressOfInstruction(instruction);
-                var val: u8 = self.Memory.read(addr);
+                var val: u8 = self.Bus.read(addr);
                 val +%= 1;
-                self.Memory.write(addr, val);
+                self.Bus.write(addr, val);
                 self.setZN(val);
             },
             Op.DEC => {
                 const addr = self.addressOfInstruction(instruction);
-                var val: u8 = self.Memory.read(addr);
+                var val: u8 = self.Bus.read(addr);
                 val -%= 1;
-                self.Memory.write(addr, val);
+                self.Bus.write(addr, val);
                 self.setZN(val);
             },
             Op.INX => {
@@ -220,7 +220,7 @@ pub const CPU = struct {
             },
             Op.PHA => {
                 const addr = (0x100 +% @as(u16, self.SP));
-                self.Memory.write(addr, self.A);
+                self.Bus.write(addr, self.A);
                 self.SP = self.SP -% 1;
             },
             Op.LDY => {
@@ -229,13 +229,13 @@ pub const CPU = struct {
                 self.setZN(b);
             },
             Op.STA => {
-                self.Memory.write(self.addressOfInstruction(instruction), self.A);
+                self.Bus.write(self.addressOfInstruction(instruction), self.A);
             },
             Op.STX => {
-                self.Memory.write(self.addressOfInstruction(instruction), self.X);
+                self.Bus.write(self.addressOfInstruction(instruction), self.X);
             },
             Op.STY => {
-                self.Memory.write(self.addressOfInstruction(instruction), self.Y);
+                self.Bus.write(self.addressOfInstruction(instruction), self.Y);
             },
             Op.RTS => {
                 const low: u16 = self.pop();
@@ -251,7 +251,7 @@ pub const CPU = struct {
                     },
                     .Indirect => {
                         const addr = self.getAddress16();
-                        const low: u16 = self.Memory.read(addr);
+                        const low: u16 = self.Bus.read(addr);
                         var hi_addr: u16 = addr + 1;
                         // 6502 bug: if the low byte is $FF, the high byte wraps
                         // around to the beginning of the same page.
@@ -262,7 +262,7 @@ pub const CPU = struct {
                         if ((addr & 0x00FF) == 0x00FF) {
                             hi_addr = addr & 0xFF00;
                         }
-                        const high: u16 = self.Memory.read(hi_addr);
+                        const high: u16 = self.Bus.read(hi_addr);
                         self.PC = low | (high << 8);
                     },
                     else => {
@@ -301,8 +301,8 @@ pub const CPU = struct {
                 self.P |= flagInterrupt;
 
                 // jump to IRQ vector at $FFFE
-                const lo: u16 = self.Memory.read(0xFFFE);
-                const hi: u16 = self.Memory.read(0xFFFF);
+                const lo: u16 = self.Bus.read(0xFFFE);
+                const hi: u16 = self.Bus.read(0xFFFF);
                 self.PC = (hi << 8) | lo;
             },
             Op.Undefined => {
@@ -322,7 +322,7 @@ pub const CPU = struct {
 
     fn operator(self: *CPU, instruction: *const Instruction) u8 {
         const addr = self.addressOfInstruction(instruction);
-        return self.Memory.read(addr);
+        return self.Bus.read(addr);
     }
 
     fn addressOfInstruction(self: *CPU, instruction: *const Instruction) u16 {
@@ -376,9 +376,9 @@ pub const CPU = struct {
                 // then get the next address (wrapping +1 add) from memory
                 // Then bitwise OR to combine into a full address.
                 const addrLow = self.nextOp() +% self.X;
-                const low: u16 = self.Memory.read(addrLow);
+                const low: u16 = self.Bus.read(addrLow);
                 const addrHi = addrLow +% 1;
-                const high: u16 = self.Memory.read(addrHi);
+                const high: u16 = self.Bus.read(addrHi);
                 return low | (high << 8);
             },
             .IndirectY => {
@@ -389,9 +389,9 @@ pub const CPU = struct {
                 // Then bitwise OR to combine into a full address, then add Y.
                 // Basically same as IndirectX but add Y at the end instead of X at the beginning.
                 const addrLow: u8 = self.nextOp();
-                const low: u16 = self.Memory.read(addrLow);
+                const low: u16 = self.Bus.read(addrLow);
                 const addrHi, _ = @addWithOverflow(addrLow, 1);
-                const high: u16 = self.Memory.read(addrHi);
+                const high: u16 = self.Bus.read(addrHi);
                 const base_addr = low | (high << 8);
                 return base_addr +% @as(u16, self.Y);
             },
@@ -410,14 +410,14 @@ pub const CPU = struct {
     }
 
     fn nextOp(self: *CPU) u8 {
-        const b = self.Memory.read(self.PC);
+        const b = self.Bus.read(self.PC);
         self.PC +%= 1;
         return b;
     }
 
     // push a byte onto the stack and then decrement the stack pointer.
     fn push(self: *CPU, b: u8) void {
-        self.Memory.write(0x100 + @as(u16, self.SP), b);
+        self.Bus.write(0x100 + @as(u16, self.SP), b);
         self.SP -%= 1;
     }
 
@@ -426,7 +426,7 @@ pub const CPU = struct {
     // and the address is formed like so: $0100 + SP
     fn pop(self: *CPU) u8 {
         self.SP +%= 1;
-        return self.Memory.read(0x100 + @as(u16, self.SP));
+        return self.Bus.read(0x100 + @as(u16, self.SP));
     }
 
     fn getNegative(self: *CPU) bool {
@@ -492,7 +492,7 @@ fn parseCPUTestCase(allocator: Allocator, testcase_str: []const u8) !std.json.Pa
 fn runTestCase(test_case: *const InstrTest) !void {
     const allocator = std.heap.page_allocator;
     const ram = try allocator.alloc(u8, 0x10000);
-    var memory = Memory{ .Ram = ram };
+    var memory = Bus{ .Ram = ram };
     var cpu = CPU.init(T.allocator, &memory);
 
     const received = try cpu.runFromState(&test_case.initial);
