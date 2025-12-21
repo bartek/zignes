@@ -1,11 +1,17 @@
+const PPU = @import("ppu.zig").PPU;
+
 pub const Bus = struct {
     Ram: []u8,
 
+    ppu: *PPU,
+
     pub fn init(
         ram: []u8,
+        ppu: *PPU,
     ) Bus {
         return Bus{
             .Ram = ram,
+            .ppu = ppu,
         };
     }
 

@@ -1,5 +1,6 @@
 const std = @import("std");
 const Bus = @import("bus.zig").Bus;
+const PPU = @import("ppu.zig").PPU;
 const instructions = @import("instructions.zig");
 const Instruction = instructions.Instruction;
 const Op = instructions.Op;
@@ -41,10 +42,10 @@ pub const CPU = struct {
     allocator: Allocator,
     Bus: *Bus,
 
-    pub fn init(allocator: Allocator, mem: *Bus) CPU {
+    pub fn init(allocator: Allocator, bus: *Bus) CPU {
         return CPU{
             .allocator = allocator,
-            .Bus = mem,
+            .Bus = bus,
         };
     }
 
@@ -492,8 +493,9 @@ fn parseCPUTestCase(allocator: Allocator, testcase_str: []const u8) !std.json.Pa
 fn runTestCase(test_case: *const InstrTest) !void {
     const allocator = std.heap.page_allocator;
     const ram = try allocator.alloc(u8, 0x10000);
-    var memory = Bus{ .Ram = ram };
-    var cpu = CPU.init(T.allocator, &memory);
+    var ppu = PPU{};
+    var bus = Bus{ .Ram = ram, .ppu = &ppu };
+    var cpu = CPU.init(T.allocator, &bus);
 
     const received = try cpu.runFromState(&test_case.initial);
     defer T.allocator.free(received.ram);

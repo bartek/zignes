@@ -3,7 +3,8 @@ const Atomic = std.atomic;
 const AtomicOrder = std.builtin.AtomicOrder;
 
 const CPU = @import("cpu.zig").CPU;
-const Memory = @import("memory.zig").Memory;
+const PPU = @import("ppu.zig").PPU;
+const Bus = @import("bus.zig").Bus;
 
 fn run(cpu: *CPU) void {
     while (true) { // TODO: Handle cycles per frame
@@ -23,8 +24,9 @@ fn run_thread(done: *Atomic.Value(bool), cpu: *CPU) void {
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
     const ram = try allocator.alloc(u8, 0x800);
-    var memory = Memory{ .Ram = ram };
-    var cpu = CPU.init(&memory);
+    var ppu = PPU{};
+    var bus = Bus{ .Ram = ram, .ppu = &ppu };
+    var cpu = CPU.init(allocator, &bus);
 
     var done = Atomic.Value(bool).init(false);
 
