@@ -1,5 +1,6 @@
 const std = @import("std");
 const Bus = @import("bus.zig").Bus;
+const CPUTestBus = @import("bus.zig").CPUTestBus;
 const PPU = @import("ppu.zig").PPU;
 const instructions = @import("instructions.zig");
 const Instruction = instructions.Instruction;
@@ -86,6 +87,11 @@ pub const CPU = struct {
             self.Bus.write(entry[0], entry[1]);
         }
 
+        // exec a single instruction
+        const instruction = instructions.decodeInstruction(self.fetchOpcode(self.Bus));
+
+        self.exec(instruction);
+
         var final_ram = try self.allocator.alloc(struct { u16, u8 }, initial_state.ram.len);
         for (0..initial_state.ram.len) |i| {
             const entry = &initial_state.ram[i];
@@ -93,11 +99,6 @@ pub const CPU = struct {
             assert(i < final_ram.len);
             final_ram[i] = .{ entry[0], self.Bus.read(addr) };
         }
-
-        // exec a single instruction
-        const instruction = instructions.decodeInstruction(self.fetchOpcode(self.Bus));
-
-        self.exec(instruction);
 
         return .{ .pc = self.PC, .a = self.A, .x = self.X, .s = self.SP, .y = self.Y, .p = @bitCast(self.P), .ram = final_ram };
     }
@@ -493,8 +494,8 @@ fn parseCPUTestCase(allocator: Allocator, testcase_str: []const u8) !std.json.Pa
 fn runTestCase(test_case: *const InstrTest) !void {
     const allocator = std.heap.page_allocator;
     const ram = try allocator.alloc(u8, 0x10000);
-    var ppu = PPU{};
-    var bus = Bus{ .Ram = ram, .ppu = &ppu };
+    const testBus = CPUTestBus{ .mem = ram };
+    var bus = Bus{ .cpuTestBus = testBus };
     var cpu = CPU.init(T.allocator, &bus);
 
     const received = try cpu.runFromState(&test_case.initial);

@@ -4,26 +4,36 @@ pub const PPU = struct {
     ppu_ctrl: PPUCTRL = .{},
     ppu_mask: PPUMask = .{},
 
+    // OAM Registers & Memory
+    oam_addr: u8 = 0, // $2003 write
+
     pub fn readRegister(self: *PPU, addr: u16) u8 {
         std.debug.assert(addr >= 0 and addr <= 8);
-        _ = self;
-        return 0;
+
+        return switch (addr) {
+            0...8 => {
+                _ = self.oam_addr;
+                // use oam_addr
+                return 0;
+            },
+            else => unreachable,
+        };
     }
 
     pub fn writeRegister(self: *PPU, addr: u16, val: u8) void {
-        // We write to addres space $2000 - $4014
-        // https://www.nesdev.org/wiki/PPU_registers
-        std.debug.assert(addr >= 0x2000 and addr <= 0x4014);
+        std.debug.assert(addr >= 0 and addr <= 8);
 
-        // handle 0-7 by masking
-        const register = addr & 0x0007;
-
-        switch (register) {
+        switch (addr) {
             0 => { // PPUCTRL
                 self.ppu_ctrl = @bitCast(val);
             },
             1 => self.ppu_mask = @bitCast(val), // PPUMASK
             2 => return, // PPUSTATUS is read only
+            3 => self.oam_addr = val,
+            4...8 => {
+                // TODO
+                return;
+            },
             else => unreachable,
         }
     }
