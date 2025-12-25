@@ -61,21 +61,21 @@ pub const NESBus = struct {
 
     pub fn read(self: *NESBus, addr: u16) u8 {
         return switch (addr) {
-            0x0000...0x1FFF => self.ram[addr],
+            0x0000...0x1FFF => self.ram[addr & 0x07FF], // Mirror RAM every 2KB
             // Use mirroring to reduce the large address space into just the 8 entries
             // we need.
             0x2000...0x3FFF => self.ppu.readRegister(addr & 0x0007),
-            else => self.ram[addr],
+            else => 0, // TODO: implement ROM mapping
         };
     }
 
     pub fn write(self: *NESBus, addr: u16, data: u8) void {
         switch (addr) {
-            0x0000...0x1FFF => self.ram[addr] = data,
+            0x0000...0x1FFF => self.ram[addr & 0x07FF] = data, // Mirror RAM every 2KB
             // Use mirroring to reduce the large address space into just the 8 entries
             // we need.
             0x2000...0x3FFF => self.ppu.writeRegister(addr & 0x0007, data),
-            else => self.ram[addr] = data,
+            else => {}, // TODO: implement ROM/cartridge mapping
         }
     }
 };

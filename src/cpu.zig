@@ -36,7 +36,7 @@ pub const CPU = struct {
     PC: u16 = 0, // Program counter
 
     Cycles: u64 = 0, // Number of cycles executed
-    Halt: i8 = 0,
+    Halt: u8 = 0,
 
     interrupt: Interrupt = .none,
 
@@ -70,9 +70,8 @@ pub const CPU = struct {
         const opcode = self.fetchOpcode(self.Bus);
         const instruction = instructions.decodeInstruction(opcode);
 
-        self.Halt += instruction[2] - 1;
-
-        return false;
+        self.Halt +%= instruction[2] - 1;
+        return self.Halt > 0;
     }
 
     fn runFromState(self: *CPU, initial_state: *const CPUState) !CPUState {

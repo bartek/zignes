@@ -7,6 +7,9 @@ pub const PPU = struct {
     // OAM Registers & Memory
     oam_addr: u8 = 0, // $2003 write
 
+    cycle: u16 = 0,
+    scanline: u16 = 0,
+
     pub fn readRegister(self: *PPU, addr: u16) u8 {
         std.debug.assert(addr >= 0 and addr <= 8);
 
@@ -35,6 +38,20 @@ pub const PPU = struct {
                 return;
             },
             else => unreachable,
+        }
+    }
+
+    // CPU clock is 3x slower than PPU clock
+    pub fn tick(self: *PPU) void {
+        // TODO: Draw a pixel now?
+        self.cycle += 1;
+        // magic number is physical boundary
+        if (self.cycle >= 341) {
+            self.cycle = 0;
+            self.scanline += 1;
+            if (self.scanline >= 261) {
+                self.scanline = -1;
+            }
         }
     }
 };

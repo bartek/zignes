@@ -15,6 +15,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // Link SDL2
+    exe.linkSystemLibrary("SDL2");
+    exe.linkLibC();
+
     // Install the executable to zig-out/bin by default (user chooses prefix).
     b.installArtifact(exe);
 
