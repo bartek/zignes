@@ -50,7 +50,7 @@ pub fn main() !void {
             }
         }
 
-        try screen.render(&ppu);
+        try screen.render(&ppu, &bus, &cpu);
         c.SDL_Delay(10);
     }
 

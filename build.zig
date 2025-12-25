@@ -15,8 +15,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // Link SDL2
+    // Link SDL2 and SDL2_ttf
     exe.linkSystemLibrary("SDL2");
+    exe.linkSystemLibrary("SDL2_ttf");
     exe.linkLibC();
 
     // Install the executable to zig-out/bin by default (user chooses prefix).
