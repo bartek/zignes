@@ -1,2 +1,4 @@
 TODO.md
 .zig-cache/
+zig-out
+roms
