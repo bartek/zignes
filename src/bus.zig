@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const PPU = @import("ppu.zig").PPU;
+const Cartridge = @import("cartridge.zig").Cartridge;
 
 // Bus is the interface responsible for communication between CPU and other components.
 // Implementations must implement read and write methods.
@@ -48,14 +49,17 @@ pub const CPUTestBus = struct {
 pub const NESBus = struct {
     ram: []u8,
     ppu: *PPU,
+    cart: *Cartridge, // TODO: will be used to determine mapper
 
     pub fn init(
         ram: []u8,
         ppu: *PPU,
+        cartridge: *Cartridge,
     ) NESBus {
         return NESBus{
             .ram = ram,
             .ppu = ppu,
+            .cart = cartridge,
         };
     }
 

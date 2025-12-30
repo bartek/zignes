@@ -1,36 +1,26 @@
 const std = @import("std");
 const Atomic = std.atomic;
 const AtomicOrder = std.builtin.AtomicOrder;
+const Allocator = std.mem.Allocator;
 
-const CPU = @import("cpu.zig").CPU;
-const PPU = @import("ppu.zig").PPU;
-const Bus = @import("bus.zig").Bus;
-const NESBus = @import("bus.zig").NESBus;
+const NES = @import("nes.zig").NES;
 const Screen = @import("screen.zig").Screen;
 const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
 
-fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), cpu: *CPU) void {
+fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), nes: *NES) void {
     while (!done.load(AtomicOrder.unordered)) {
         const is_paused: bool = paused.load(AtomicOrder.unordered);
         if (!is_paused) {
-            const halt = cpu.tick();
-            if (halt) {} // TODO: Handle cycles per frame
+            nes.tick();
         }
     }
 }
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
-    const ram = try allocator.alloc(u8, 0x800);
-    var ppu = PPU{};
-    const nesBus = NESBus{
-        .ram = ram,
-        .ppu = &ppu,
-    };
-    var bus = Bus{ .nesBus = nesBus };
-    var cpu = CPU.init(allocator, &bus);
+    var nes = try NES.loadROMFromFile(std.heap.page_allocator, "roms/donkeykong.nes");
+    defer nes.deinit();
 
     var screen = try Screen.init();
     defer screen.deinit();
@@ -38,7 +28,7 @@ pub fn main() !void {
     var done = Atomic.Value(bool).init(false);
     var paused = Atomic.Value(bool).init(false);
 
-    const thread_nes = try std.Thread.spawn(.{}, run_thread, .{ &done, &paused, &cpu });
+    const thread_nes = try std.Thread.spawn(.{}, run_thread, .{ &done, &paused, &nes });
 
     // Event loop - keep window open
     var quit = false;
@@ -61,7 +51,7 @@ pub fn main() !void {
             }
         }
 
-        try screen.render(&ppu, &bus, &cpu);
+        try screen.render(&nes);
         c.SDL_Delay(10);
     }
 

@@ -4,6 +4,7 @@ const c = @cImport({
     @cInclude("SDL2/SDL_ttf.h");
 });
 
+const NES = @import("nes.zig").NES;
 const PPU = @import("ppu.zig").PPU;
 const Bus = @import("bus.zig").Bus;
 const CPU = @import("cpu.zig").CPU;
@@ -90,15 +91,15 @@ pub const Screen = struct {
     }
 
     // Render the PPU buffer to the screen
-    pub fn render(self: *Screen, ppu: *const PPU, bus: *Bus, cpu: *const CPU) !void {
+    pub fn render(self: *Screen, nes: *NES) !void {
         // Clear renderer with black background
         _ = c.SDL_RenderClear(self.renderer);
 
         // Render PPU game area (left side)
-        try self.renderGameArea(ppu);
+        try self.renderGameArea(nes.ppu);
 
         // Render debug info (right side)
-        try self.renderDebugArea(bus, cpu);
+        try self.renderDebugArea(nes.bus, nes.cpu);
 
         c.SDL_RenderPresent(self.renderer);
     }
