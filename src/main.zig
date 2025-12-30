@@ -11,10 +11,13 @@ const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
 
-fn run_thread(done: *Atomic.Value(bool), cpu: *CPU) void {
+fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), cpu: *CPU) void {
     while (!done.load(AtomicOrder.unordered)) {
-        const halt = cpu.tick();
-        if (halt) {} // TODO: Handle cycles per frame
+        const is_paused: bool = paused.load(AtomicOrder.unordered);
+        if (!is_paused) {
+            const halt = cpu.tick();
+            if (halt) {} // TODO: Handle cycles per frame
+        }
     }
 }
 
@@ -33,8 +36,9 @@ pub fn main() !void {
     defer screen.deinit();
 
     var done = Atomic.Value(bool).init(false);
+    var paused = Atomic.Value(bool).init(false);
 
-    const thread_nes = try std.Thread.spawn(.{}, run_thread, .{ &done, &cpu });
+    const thread_nes = try std.Thread.spawn(.{}, run_thread, .{ &done, &paused, &cpu });
 
     // Event loop - keep window open
     var quit = false;
@@ -45,6 +49,13 @@ pub fn main() !void {
                 c.SDL_QUIT => {
                     quit = true;
                     done.store(true, .monotonic);
+                },
+                c.SDL_KEYDOWN => {
+                    const key = event.key.keysym.sym;
+                    if (key == c.SDLK_SPACE) {
+                        const current = paused.load(AtomicOrder.unordered);
+                        paused.store(!current, AtomicOrder.monotonic);
+                    }
                 },
                 else => {},
             }
