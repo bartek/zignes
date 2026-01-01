@@ -69,7 +69,17 @@ pub const NESBus = struct {
             // Use mirroring to reduce the large address space into just the 8 entries
             // we need.
             0x2000...0x3FFF => self.ppu.readRegister(addr & 0x0007),
-            else => 0, // TODO: implement ROM mapping
+            0x4000...0x401F => 0, // TODO: APU & I/O
+            0x4020...0x5FFF => 0, // TODO: Cartridge expansion ROM
+            0x6000...0x7FFF => 0, // TODO: SRAM (battery-backed)
+            0x8000...0xFFFF => {
+                // PRG ROM mapping (mapper 0 NROM)
+                // For NROM: if PRG is 16KB (1 bank), mirror it to both 0x8000 and 0xC000
+                // if PRG is 32KB (2 banks), map them sequentially
+                const prg_addr = addr - 0x8000;
+                const prg_size = self.cart.prg_rom.len;
+                return self.cart.prg_rom[prg_addr % prg_size];
+            },
         };
     }
 
@@ -79,7 +89,10 @@ pub const NESBus = struct {
             // Use mirroring to reduce the large address space into just the 8 entries
             // we need.
             0x2000...0x3FFF => self.ppu.writeRegister(addr & 0x0007, data),
-            else => {}, // TODO: implement ROM/cartridge mapping
+            0x4000...0x401F => {}, // TODO: APU & I/O
+            0x4020...0x5FFF => {}, // TODO: Cartridge expansion ROM
+            0x6000...0x7FFF => {}, // TODO: SRAM (battery-backed)
+            0x8000...0xFFFF => {}, // PRG ROM is read-only
         }
     }
 };

@@ -88,6 +88,7 @@ pub const Cartridge = struct {
     header: Header,
     prg_rom: []const u8,
     chr_rom: []const u8,
+    allocator: Allocator,
 
     pub fn loadFromFile(allocator: Allocator, path: [*:0]const u8) !Cartridge {
         var file = try std.fs.cwd().openFileZ(path, .{});
@@ -99,19 +100,37 @@ pub const Cartridge = struct {
 
         const header: Header = @bitCast(buf);
         assert(header.isValid());
-        // TODO: Call loadFromFile at some point to begin integrating this.
-        _ = allocator;
+
+        // Skip trainer if present (512 bytes at $7000-$71FF)
+        if (header.flags_6.has_trainer) {
+            var trainer_buf: [512]u8 = undefined;
+            const trainer_read = try file.read(&trainer_buf);
+            assert(trainer_read == 512);
+        }
+
+        // Load PRG ROM (16 KB units)
+        const prg_rom_size = @as(usize, header.prg_rom_size) * 16 * 1024;
+        const prg_rom_buf = try allocator.alloc(u8, prg_rom_size);
+        const prg_read = try file.read(prg_rom_buf);
+        assert(prg_read == prg_rom_size);
+
+        // Load CHR ROM (8 KB units)
+        const chr_rom_size = @as(usize, header.chr_rom_size) * 8 * 1024;
+        const chr_rom_buf = try allocator.alloc(u8, chr_rom_size);
+        const chr_read = try file.read(chr_rom_buf);
+        assert(chr_read == chr_rom_size);
+
         return .{
+            .allocator = allocator,
             .header = header,
-            // TODO:
-            .prg_rom = &.{},
-            .chr_rom = &.{},
+            .prg_rom = prg_rom_buf,
+            .chr_rom = chr_rom_buf,
         };
     }
 
     pub fn deinit(self: *Cartridge) void {
-        _ = self;
-        // TODO
+        self.allocator.free(self.prg_rom);
+        self.allocator.free(self.chr_rom);
     }
 };
 

@@ -70,7 +70,10 @@ pub const CPU = struct {
         const opcode = self.fetchOpcode(self.Bus);
         const instruction = instructions.decodeInstruction(opcode);
 
-        self.Halt +%= instruction[2] - 1;
+        // Decrement cycle counter, handling the case where instruction[2] is already 0
+        if (instruction[2] > 0) {
+            self.Halt +%= instruction[2] - 1;
+        }
         return self.Halt > 0;
     }
 
