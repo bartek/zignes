@@ -286,6 +286,9 @@ pub const CPU = struct {
             Op.STA => {
                 self.Bus.write(self.addressOfInstruction(instruction), self.A);
             },
+            Op.SEC => {
+                self.setFlag(flagCarry, true);
+            },
             Op.STX => {
                 self.Bus.write(self.addressOfInstruction(instruction), self.X);
             },
@@ -765,4 +768,8 @@ test "ASL, LSR" {
     try runTestsForInstruction("56");
     try runTestsForInstruction("4e");
     try runTestsForInstruction("5e");
+}
+
+test "SEC" {
+    try runTestsForInstruction("38");
 }

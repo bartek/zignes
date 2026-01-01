@@ -36,6 +36,7 @@ pub const Op = enum(u8) {
     RTI,
     RTS,
     SBC,
+    SEC,
     STA,
     STX,
     STY,
@@ -220,6 +221,9 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0xc0] = .{ Op.CPY, AddressMode.Immediate, 2 };
         instr_lookup_table[0xc4] = .{ Op.CPY, AddressMode.ZeroPage, 3 };
         instr_lookup_table[0xcc] = .{ Op.CPY, AddressMode.Absolute, 4 };
+
+        // Set Carry
+        instr_lookup_table[0x38] = .{ Op.SEC, AddressMode.Implied, 2 };
 
         // ORA
         instr_lookup_table[0x09] = .{ Op.ORA, AddressMode.Immediate, 2 };
