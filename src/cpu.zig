@@ -5,6 +5,7 @@ const PPU = @import("ppu.zig").PPU;
 const instructions = @import("instructions.zig");
 const Instruction = instructions.Instruction;
 const Op = instructions.Op;
+const AddressMode = instructions.AddressMode;
 const panic = std.debug.panic;
 
 const assert = std.debug.assert;
@@ -138,7 +139,21 @@ pub const CPU = struct {
             Op.ADC => self.adc(self.operator(instruction)),
             Op.SBC => self.adc(~self.operator(instruction)),
             Op.ASL => {
-                // TODO
+                if (instruction[1] == AddressMode.Implied) {
+                    // ASL A - shift accumulator
+                    self.setFlag(flagCarry, (self.A & 0x80) != 0);
+                    self.A <<= 1;
+                    self.setZN(self.A);
+                    return;
+                }
+
+                // ASL with memory
+                const addr = self.addressOfInstruction(instruction);
+                var val: u8 = self.Bus.read(addr);
+                self.setFlag(flagCarry, (val & 0x80) != 0);
+                val <<= 1;
+                self.Bus.write(addr, val);
+                self.setZN(val);
             },
             Op.AND => {
                 const b = self.operator(instruction);
@@ -198,7 +213,20 @@ pub const CPU = struct {
             Op.BVS => self.conditionalBranch(self.getOverflow()),
 
             Op.LSR => {
-                // TODO
+                if (instruction[1] == AddressMode.Implied) {
+                    // LSR A - shift accumulator right
+                    self.setFlag(flagCarry, (self.A & 0x01) != 0);
+                    self.A >>= 1;
+                    self.setZN(self.A);
+                    return;
+                }
+                // LSR with memory
+                const addr = self.addressOfInstruction(instruction);
+                var val: u8 = self.Bus.read(addr);
+                self.setFlag(flagCarry, (val & 0x01) != 0);
+                val >>= 1;
+                self.Bus.write(addr, val);
+                self.setZN(val);
             },
 
             Op.TAX => {
