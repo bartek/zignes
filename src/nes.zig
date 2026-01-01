@@ -46,6 +46,11 @@ pub const NES = struct {
 
     pub fn tick(self: *NES) void {
         _ = self.cpu.tick();
+
+        // CPU runs at 1/3 speed of PPU, so tick PPU 3x for every CPU tick
+        self.ppu.tick();
+        self.ppu.tick();
+        self.ppu.tick();
     }
 
     pub fn deinit(self: *NES) void {

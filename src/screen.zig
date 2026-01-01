@@ -105,20 +105,28 @@ pub const Screen = struct {
     }
 
     fn renderGameArea(self: *Screen, ppu: *const PPU) !void {
-        _ = ppu;
+        const allocator = std.heap.page_allocator;
+        const buffer = try allocator.alloc(u8, 256 * 240 * 4);
+        defer allocator.free(buffer);
 
-        // Draw placeholder for game area (cyan background)
+        ppu.render(buffer);
+
+        // Update texture with pixel data
+        var pixels: [*]u8 = undefined;
+        var pitch: i32 = undefined;
+        if (c.SDL_LockTexture(self.texture, null, @ptrCast(&pixels), &pitch) == 0) {
+            @memcpy(pixels[0 .. 256 * 240 * 4], buffer);
+            c.SDL_UnlockTexture(self.texture);
+        }
+
+        // Render texture scaled 2x
         var rect: c.SDL_Rect = .{
             .x = 0,
             .y = 0,
             .w = 512,
             .h = 480,
         };
-        _ = c.SDL_SetRenderDrawColor(self.renderer, 0, 100, 100, 255);
-        _ = c.SDL_RenderFillRect(self.renderer, &rect);
-
-        // Draw placeholder text
-        try self.renderTextLine("PPU OUTPUT", 200);
+        _ = c.SDL_RenderCopy(self.renderer, self.texture, null, &rect);
     }
 
     fn renderDebugArea(self: *Screen, bus: *Bus, cpu: *const CPU) !void {

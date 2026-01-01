@@ -50,9 +50,18 @@ pub const PPU = struct {
             self.cycle = 0;
             self.scanline += 1;
             if (self.scanline >= 261) {
-                self.scanline = -1;
+                self.scanline = 0;
             }
         }
+    }
+
+    // Render PPU framebuffer to pixel data
+    // Returns a buffer of (256 * 240 * 4) bytes in RGBA format
+    pub fn render(self: *const PPU, buffer: []u8) void {
+        _ = self;
+        // TODO: Implement actual PPU rendering
+        // For now, fill with black
+        @memset(buffer, 0);
     }
 };
 
