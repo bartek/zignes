@@ -4,6 +4,8 @@ const panic = std.debug.panic;
 
 pub const Op = enum(u8) {
     ADC,
+    AND,
+    ASL,
     BCC,
     BCS,
     BEQ,
@@ -13,6 +15,7 @@ pub const Op = enum(u8) {
     BRK,
     BVC,
     BVS,
+    CPY,
     DEC,
     DEX,
     DEY,
@@ -24,6 +27,8 @@ pub const Op = enum(u8) {
     LDA,
     LDX,
     LDY,
+    ORA,
+    LSR,
     PHA,
     PHP,
     PLA,
@@ -97,6 +102,32 @@ pub const Instruction = struct { Op, AddressMode, u8 };
 fn makeLookupTable() [256]Instruction {
     comptime { // guarantee table will be evaluated at compile-time.
         var instr_lookup_table: [256]Instruction = .{UndefinedInstruction} ** 256;
+
+        // AND
+        instr_lookup_table[0x29] = .{ Op.AND, AddressMode.Immediate, 2 };
+        instr_lookup_table[0x25] = .{ Op.AND, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0x35] = .{ Op.AND, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0x2d] = .{ Op.AND, AddressMode.Absolute, 4 };
+        instr_lookup_table[0x3d] = .{ Op.AND, AddressMode.AbsoluteX, 4 };
+        instr_lookup_table[0x39] = .{ Op.AND, AddressMode.AbsoluteY, 4 };
+        instr_lookup_table[0x21] = .{ Op.AND, AddressMode.IndirectX, 6 };
+        instr_lookup_table[0x31] = .{ Op.AND, AddressMode.IndirectY, 5 };
+
+        // Shift --
+
+        // ASL
+        instr_lookup_table[0x0a] = .{ Op.ASL, AddressMode.Implied, 2 };
+        instr_lookup_table[0x06] = .{ Op.ASL, AddressMode.ZeroPage, 5 };
+        instr_lookup_table[0x16] = .{ Op.ASL, AddressMode.ZeroPageX, 6 };
+        instr_lookup_table[0x0e] = .{ Op.ASL, AddressMode.Absolute, 6 };
+        instr_lookup_table[0x1e] = .{ Op.ASL, AddressMode.AbsoluteX, 7 };
+
+        // LSR
+        instr_lookup_table[0x4a] = .{ Op.LSR, AddressMode.Implied, 2 };
+        instr_lookup_table[0x46] = .{ Op.LSR, AddressMode.ZeroPage, 5 };
+        instr_lookup_table[0x56] = .{ Op.LSR, AddressMode.ZeroPageX, 6 };
+        instr_lookup_table[0x4e] = .{ Op.LSR, AddressMode.Absolute, 6 };
+        instr_lookup_table[0x5e] = .{ Op.LSR, AddressMode.AbsoluteX, 7 };
 
         // Arithmetic (ALU)
         instr_lookup_table[0x69] = .{ Op.ADC, AddressMode.Immediate, 2 };
@@ -185,6 +216,21 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0x81] = .{ Op.STA, AddressMode.IndirectX, 6 };
         instr_lookup_table[0x91] = .{ Op.STA, AddressMode.IndirectY, 6 };
 
+        // Compare
+        instr_lookup_table[0xc0] = .{ Op.CPY, AddressMode.Immediate, 2 };
+        instr_lookup_table[0xc4] = .{ Op.CPY, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0xcc] = .{ Op.CPY, AddressMode.Absolute, 4 };
+
+        // ORA
+        instr_lookup_table[0x09] = .{ Op.ORA, AddressMode.Immediate, 2 };
+        instr_lookup_table[0x05] = .{ Op.ORA, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0x15] = .{ Op.ORA, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0x0d] = .{ Op.ORA, AddressMode.Absolute, 4 };
+        instr_lookup_table[0x1d] = .{ Op.ORA, AddressMode.AbsoluteX, 4 };
+        instr_lookup_table[0x19] = .{ Op.ORA, AddressMode.AbsoluteY, 4 };
+        instr_lookup_table[0x01] = .{ Op.ORA, AddressMode.IndirectX, 6 };
+        instr_lookup_table[0x11] = .{ Op.ORA, AddressMode.IndirectY, 5 };
+
         // Store X
         instr_lookup_table[0x86] = .{ Op.STX, AddressMode.ZeroPage, 3 };
         instr_lookup_table[0x96] = .{ Op.STX, AddressMode.ZeroPageX, 4 };
@@ -211,7 +257,11 @@ pub const UndefinedInstruction: Instruction = .{ Op.Undefined, AddressMode.Undef
 const lookup_table = makeLookupTable();
 
 pub fn decodeInstruction(opcode: u8) *const Instruction {
-    return &lookup_table[opcode];
+    const instruction = &lookup_table[opcode];
+    if (instruction[0] == Op.Undefined) {
+        panic("Undefined opcode: 0x{x:0>2}", .{opcode});
+    }
+    return instruction;
 }
 
 comptime {

@@ -67,13 +67,12 @@ pub const CPU = struct {
             else => {},
         }
 
-        const opcode = self.fetchOpcode(self.Bus);
+        const opcode = self.fetchOpcode();
         const instruction = instructions.decodeInstruction(opcode);
 
-        // Decrement cycle counter, handling the case where instruction[2] is already 0
-        if (instruction[2] > 0) {
-            self.Halt +%= instruction[2] - 1;
-        }
+        self.exec(instruction);
+
+        self.Halt +%= (instruction[2] -% 1);
         return self.Halt > 0;
     }
 
@@ -90,8 +89,7 @@ pub const CPU = struct {
         }
 
         // exec a single instruction
-        const instruction = instructions.decodeInstruction(self.fetchOpcode(self.Bus));
-
+        const instruction = instructions.decodeInstruction(self.fetchOpcode());
         self.exec(instruction);
 
         var final_ram = try self.allocator.alloc(struct { u16, u8 }, initial_state.ram.len);
@@ -105,8 +103,8 @@ pub const CPU = struct {
         return .{ .pc = self.PC, .a = self.A, .x = self.X, .s = self.SP, .y = self.Y, .p = @bitCast(self.P), .ram = final_ram };
     }
 
-    fn fetchOpcode(self: *CPU, mem: *Bus) u8 {
-        const opcode = mem.read(self.PC);
+    fn fetchOpcode(self: *CPU) u8 {
+        const opcode = self.Bus.read(self.PC);
         self.PC +%= 1;
         return opcode;
     }
@@ -139,6 +137,15 @@ pub const CPU = struct {
         switch (op) {
             Op.ADC => self.adc(self.operator(instruction)),
             Op.SBC => self.adc(~self.operator(instruction)),
+            Op.ASL => {
+                // TODO
+            },
+            Op.AND => {
+                const b = self.operator(instruction);
+                const result: u8 = self.A & b;
+                self.A = result;
+                self.setZN(result);
+            },
             Op.INC => {
                 const addr = self.addressOfInstruction(instruction);
                 var val: u8 = self.Bus.read(addr);
@@ -169,6 +176,18 @@ pub const CPU = struct {
                 self.Y -%= 1;
                 self.setZN(self.Y);
             },
+            Op.ORA => {
+                const b = self.operator(instruction);
+                const result: u8 = self.A | b;
+                self.A = result;
+                self.setZN(result);
+            },
+            Op.CPY => {
+                const b = self.operator(instruction);
+                const result, _ = @subWithOverflow(self.Y, b);
+                self.setZN(result);
+                self.setFlag(flagCarry, self.Y >= b);
+            },
             Op.BCC => self.conditionalBranch(!self.getCarry()),
             Op.BCS => self.conditionalBranch(self.getCarry()),
             Op.BEQ => self.conditionalBranch(self.getZero()),
@@ -177,6 +196,10 @@ pub const CPU = struct {
             Op.BPL => self.conditionalBranch(!self.getNegative()),
             Op.BVC => self.conditionalBranch(!self.getOverflow()),
             Op.BVS => self.conditionalBranch(self.getOverflow()),
+
+            Op.LSR => {
+                // TODO
+            },
 
             Op.TAX => {
                 self.X = self.A;
@@ -309,9 +332,7 @@ pub const CPU = struct {
                 const hi: u16 = self.Bus.read(0xFFFF);
                 self.PC = (hi << 8) | lo;
             },
-            Op.Undefined => {
-                panic("\n!! not implemented 0x{x}\n", .{instruction[2]});
-            },
+            Op.Undefined => unreachable,
         }
     }
 
@@ -676,4 +697,44 @@ test "ADC, SBC, INC, DEC, INX, DEX, INY, DEY" {
     try runTestsForInstruction("ca");
     try runTestsForInstruction("c8");
     try runTestsForInstruction("88");
+}
+
+test "AND, ORA" {
+    try runTestsForInstruction("29");
+    try runTestsForInstruction("25");
+    try runTestsForInstruction("35");
+    try runTestsForInstruction("2d");
+    try runTestsForInstruction("3d");
+    try runTestsForInstruction("39");
+    try runTestsForInstruction("21");
+    try runTestsForInstruction("31");
+
+    try runTestsForInstruction("09");
+    try runTestsForInstruction("05");
+    try runTestsForInstruction("15");
+    try runTestsForInstruction("0d");
+    try runTestsForInstruction("1d");
+    try runTestsForInstruction("19");
+    try runTestsForInstruction("01");
+    try runTestsForInstruction("11");
+}
+
+test "CPY" {
+    try runTestsForInstruction("c0");
+    try runTestsForInstruction("c4");
+    try runTestsForInstruction("cc");
+}
+
+test "ASL, LSR" {
+    try runTestsForInstruction("0a");
+    try runTestsForInstruction("06");
+    try runTestsForInstruction("16");
+    try runTestsForInstruction("0e");
+    try runTestsForInstruction("1e");
+
+    try runTestsForInstruction("4a");
+    try runTestsForInstruction("46");
+    try runTestsForInstruction("56");
+    try runTestsForInstruction("4e");
+    try runTestsForInstruction("5e");
 }
