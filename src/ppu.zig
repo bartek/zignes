@@ -14,17 +14,22 @@ pub const VramAddr = packed struct {
 pub const PPU = struct {
     ppu_ctrl: PPUCTRL = .{},
     ppu_mask: PPUMask = .{},
+    ppu_status: PPUStatus = .{}, // $2002 read
 
-    // OAM Registers & Memory
-    oam_addr: u8 = 0, // $2003 write
+    // PPU Memory
     vram: [2048]u8 = [_]u8{0} ** 2048, // 2KB internal VRAM
     palette: [32]u8 = [_]u8{0} ** 32, // 32 bytes of palette RAM
-    data_buffer: u8 = 0, // Used for delayed reads from VRAM
+    oam: [256]u8 = [_]u8{0} ** 256,
 
     // Loopy registers. These render the background and support scrolling
     v: VramAddr = .{}, // $2006 write
     t: VramAddr = .{}, // temporary register for $2006 writes
+    x: u3 = 0, // fine X scroll (3 bits)
     w: u1 = 0, // Write latch (0 = first write, 1 = second write) for $2006
+
+    // OAM Registers & Memory
+    oam_addr: u8 = 0, // $2003 write
+    data_buffer: u8 = 0, // Used for delayed reads from VRAM
 
     cart: ?*const Cartridge = null,
 
@@ -83,9 +88,12 @@ pub const PPU = struct {
 
         return switch (addr) {
             2 => { // PPUSTATUS
+                const status: u8 = @bitCast(self.ppu_status);
+                // Reading status clears the vblank flag
+                self.ppu_status.vblank_started = 0;
                 // Reset address latch
                 self.w = 0;
-                return 0; // TODO: Return actual status flags
+                return status;
             },
             7 => { // PPUDATA
                 const current_v: u15 = @bitCast(self.v);
@@ -123,6 +131,19 @@ pub const PPU = struct {
             1 => self.ppu_mask = @bitCast(val), // PPUMASK
             2 => return, // PPUSTATUS is read only
             3 => self.oam_addr = val, // OAMADDR
+            5 => { // PPUSCROLL
+                if (self.w == 0) {
+                    // First write: fine X and coarse X
+                    self.t.coarse_x = @intCast(val >> 3);
+                    self.x = @intCast(val & 0x07);
+                    self.w = 1;
+                } else {
+                    // Second write: fine Y and coarse Y
+                    self.t.fine_y = @intCast(val & 0x07);
+                    self.t.coarse_y = @intCast(val >> 3);
+                    self.w = 0;
+                }
+            },
             6 => { // PPUADDR
                 const t_val: u15 = @bitCast(self.t);
                 if (self.w == 0) {
@@ -146,7 +167,7 @@ pub const PPU = struct {
                 const inc: u15 = if (self.ppu_ctrl.vram_increment == 0) 1 else 32;
                 self.v = @bitCast(current_v + inc);
             },
-            4, 5, 8 => {
+            4, 8 => {
                 // TODO: other registers
                 return;
             },
@@ -162,8 +183,16 @@ pub const PPU = struct {
         if (self.cycle >= 341) {
             self.cycle = 0;
             self.scanline += 1;
+
+            if (self.scanline == 241) {
+                self.ppu_status.vblank_started = 1;
+            }
+
             if (self.scanline >= 261) {
                 self.scanline = 0;
+                self.ppu_status.vblank_started = 0;
+                self.ppu_status.sprite_zero_hit = 0;
+                self.ppu_status.sprite_overflow = 0;
             }
         }
     }
@@ -268,4 +297,19 @@ const PPUMask = packed struct {
     emphasize_red: u1 = 0, // bit 5
     emphasize_green: u1 = 0, // bit 6
     emphasize_blue: u1 = 0, // bit 7
+};
+
+// 7  bit  0
+// ---- ----
+// VSO. ....
+// |||| ||||
+// |||+-++++- PPU open bus. Returns stale PPU bus contents.
+// ||+------- Sprite overflow.
+// |+-------- Sprite 0 Hit.
+// +--------- Vertical blank has started.
+const PPUStatus = packed struct {
+    open_bus: u5 = 0, // bits 0-4
+    sprite_overflow: u1 = 0, // bit 5
+    sprite_zero_hit: u1 = 0, // bit 6
+    vblank_started: u1 = 0, // bit 7
 };
