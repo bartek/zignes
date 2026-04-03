@@ -33,7 +33,7 @@ pub const NES = struct {
         bus.* = Bus{ .nesBus = nesBus };
 
         cpu.* = CPU.init(allocator, bus);
-        ppu.* = PPU{};
+        ppu.* = PPU{ .cart = cart };
 
         return .{
             .allocator = allocator,

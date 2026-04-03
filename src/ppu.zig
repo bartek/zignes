@@ -1,4 +1,15 @@
 const std = @import("std");
+const Cartridge = @import("cartridge.zig").Cartridge;
+
+pub const VramAddr = packed struct {
+    coarse_x: u5 = 0, // bits 0–4
+    coarse_y: u5 = 0, // bits 5–9
+    nametable: u2 = 0, // bits 10–11
+    fine_y: u3 = 0, // bits 12–14
+    comptime {
+        std.debug.assert(@bitSizeOf(VramAddr) == 15);
+    }
+};
 
 pub const PPU = struct {
     ppu_ctrl: PPUCTRL = .{},
@@ -6,6 +17,9 @@ pub const PPU = struct {
 
     // OAM Registers & Memory
     oam_addr: u8 = 0, // $2003 write
+    vram_addr: VramAddr = .{}, // $2006 write
+
+    cart: ?*const Cartridge = null,
 
     cycle: u16 = 0,
     scanline: u16 = 0,
@@ -58,10 +72,57 @@ pub const PPU = struct {
     // Render PPU framebuffer to pixel data
     // Returns a buffer of (256 * 240 * 4) bytes in RGBA format
     pub fn render(self: *const PPU, buffer: []u8) void {
-        _ = self;
-        // TODO: Implement actual PPU rendering
-        // For now, fill with black
+        self.debugRenderPatternTable(buffer);
+    }
+
+    // Render all 512 tiles from CHR-ROM to the screen. This mostly exists for
+    // debugging/tinkering early on in development.
+    pub fn debugRenderPatternTable(self: *const PPU, buffer: []u8) void {
         @memset(buffer, 0);
+
+        const cart = self.cart orelse return;
+        const chr = cart.chr_rom;
+        if (chr.len == 0) return;
+
+        // Pattern table 0 starts at $0000, Table 1 at $1000
+        // Each table is 256 tiles, each tile is 16 bytes
+        for (0..512) |tile_idx| {
+            const tile_x = tile_idx % 32; // 32 tiles per row (256 pixels)
+            const tile_y = tile_idx / 32;
+
+            const base = tile_idx * 16;
+            if (base + 16 > chr.len) break;
+
+            for (0..8) |y| {
+                const low_byte = chr[base + y]; // Plane 0
+                const high_byte = chr[base + y + 8]; // Plane 1
+
+                for (0..8) |x| {
+                    const bit0 = (low_byte >> @intCast(7 - x)) & 1;
+                    const bit1 = (high_byte >> @intCast(7 - x)) & 1;
+                    const color_idx = (bit1 << 1) | bit0;
+
+                    const color: u32 = switch (color_idx) {
+                        0 => 0x000000FF, // Black
+                        1 => 0xAAAAAAFF, // Gray
+                        2 => 0xDDDDDDFF, // Light Gray
+                        3 => 0xFFFFFFFF, // White
+                        else => unreachable,
+                    };
+
+                    const pixel_x = (tile_x * 8) + x;
+                    const pixel_y = (tile_y * 8) + y;
+
+                    if (pixel_x < 256 and pixel_y < 240) {
+                        const offset = (pixel_y * 256 + pixel_x) * 4;
+                        buffer[offset + 0] = @intCast((color >> 24) & 0xFF); // R
+                        buffer[offset + 1] = @intCast((color >> 16) & 0xFF); // G
+                        buffer[offset + 2] = @intCast((color >> 8) & 0xFF); // B
+                        buffer[offset + 3] = @intCast(color & 0xFF); // A
+                    }
+                }
+            }
+        }
     }
 };
 
