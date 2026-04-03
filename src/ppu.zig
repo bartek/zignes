@@ -17,18 +17,92 @@ pub const PPU = struct {
 
     // OAM Registers & Memory
     oam_addr: u8 = 0, // $2003 write
-    vram_addr: VramAddr = .{}, // $2006 write
+    vram: [2048]u8 = [_]u8{0} ** 2048, // 2KB internal VRAM
+    palette: [32]u8 = [_]u8{0} ** 32, // 32 bytes of palette RAM
+    data_buffer: u8 = 0, // Used for delayed reads from VRAM
+
+    // Loopy registers. These render the background and support scrolling
+    v: VramAddr = .{}, // $2006 write
+    t: VramAddr = .{}, // temporary register for $2006 writes
+    w: u1 = 0, // Write latch (0 = first write, 1 = second write) for $2006
 
     cart: ?*const Cartridge = null,
 
     cycle: u16 = 0,
     scanline: u16 = 0,
 
+    // read a byte from PPU memory
+    fn ppuRead(self: *PPU, addr: u16) u8 {
+        const mapped = addr & 0x3fff; // Mirror addresses above $3FFF down to $0000–$3FFF
+        return switch (mapped) {
+            // Pattern tables, chr-rom from the cartridge
+            0x0000...0x1fff => {
+                if (self.cart) |c| return c.chr_rom[mapped] else return 0;
+            },
+            0x2000...0x3eff => {
+                return self.vram[self.mirrorVramAddr(mapped)];
+            },
+            0x3f00...0x3fff => {
+                var pal_addr = mapped & 0x001f;
+                if (pal_addr >= 0x10 and pal_addr % 4 == 0) pal_addr -= 0x10;
+                return self.palette[pal_addr];
+            },
+            else => unreachable,
+        };
+    }
+
+    fn ppuWrite(self: *PPU, addr: u16, val: u8) void {
+        const mapped = addr & 0x3fff;
+        switch (mapped) {
+            0x0000...0x1fff => return, // Usually read-only CHR-ROM
+            0x2000...0x3eff => {
+                self.vram[self.mirrorVramAddr(mapped)] = val;
+            },
+            0x3f00...0x3fff => {
+                var pal_addr = mapped & 0x001f;
+                if (pal_addr >= 0x10 and pal_addr % 4 == 0) pal_addr -= 0x10;
+                self.palette[pal_addr] = val;
+            },
+            else => unreachable,
+        }
+    }
+
+    fn mirrorVramAddr(self: *const PPU, addr: u16) u16 {
+        const mirrored = addr & 0x0FFF;
+        const is_vertical = if (self.cart) |c| c.header.flags_6.mirroring_is_vertical else false;
+
+        if (is_vertical) {
+            return mirrored & 0x07FF;
+        } else {
+            return ((mirrored >> 1) & 0x0400) | (mirrored & 0x03FF);
+        }
+    }
+
     pub fn readRegister(self: *PPU, addr: u16) u8 {
         std.debug.assert(addr >= 0 and addr <= 8);
 
         return switch (addr) {
-            0...8 => {
+            2 => { // PPUSTATUS
+                // Reset address latch
+                self.w = 0;
+                return 0; // TODO: Return actual status flags
+            },
+            7 => { // PPUDATA
+                const current_v: u15 = @bitCast(self.v);
+                var result = self.data_buffer;
+                self.data_buffer = self.ppuRead(current_v);
+
+                // Palette reads bypass the buffer
+                if (current_v >= 0x3F00) {
+                    result = self.data_buffer;
+                }
+
+                const inc: u15 = if (self.ppu_ctrl.vram_increment == 0) 1 else 32;
+                self.v = @bitCast(current_v + inc);
+
+                return result;
+            },
+            0, 1, 3, 4, 5, 6, 8 => {
                 _ = self.oam_addr;
                 // use oam_addr
                 return 0;
@@ -43,12 +117,37 @@ pub const PPU = struct {
         switch (addr) {
             0 => { // PPUCTRL
                 self.ppu_ctrl = @bitCast(val);
+                // Also update the nametable bits in the temporary register `t`
+                self.t.nametable = self.ppu_ctrl.nametable;
             },
             1 => self.ppu_mask = @bitCast(val), // PPUMASK
             2 => return, // PPUSTATUS is read only
-            3 => self.oam_addr = val,
-            4...8 => {
-                // TODO
+            3 => self.oam_addr = val, // OAMADDR
+            6 => { // PPUADDR
+                const t_val: u15 = @bitCast(self.t);
+                if (self.w == 0) {
+                    // First write: set high byte of t, clear bit 14 (which is mapped to bit 15 here, so it's a u15)
+                    const cleared_high = t_val & 0x00FF;
+                    const new_high = @as(u15, val & 0x3F) << 8;
+                    self.t = @bitCast(cleared_high | new_high);
+                    self.w = 1;
+                } else {
+                    // Second write: set low byte of t, then v = t
+                    const cleared_low = t_val & @as(u15, 0x7F00);
+                    self.t = @bitCast(cleared_low | val);
+                    self.v = self.t;
+                    self.w = 0;
+                }
+            },
+            7 => { // PPUDATA
+                const current_v: u15 = @bitCast(self.v);
+                self.ppuWrite(current_v, val);
+
+                const inc: u15 = if (self.ppu_ctrl.vram_increment == 0) 1 else 32;
+                self.v = @bitCast(current_v + inc);
+            },
+            4, 5, 8 => {
+                // TODO: other registers
                 return;
             },
             else => unreachable,
