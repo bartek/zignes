@@ -14,6 +14,7 @@ pub const Op = enum(u8) {
     BPL,
     BRK,
     BVC,
+    CLC,
     BVS,
     CPY,
     DEC,
@@ -29,6 +30,7 @@ pub const Op = enum(u8) {
     LDY,
     ORA,
     LSR,
+    NOP,
     PHA,
     PHP,
     PLA,
@@ -222,8 +224,12 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0xc4] = .{ Op.CPY, AddressMode.ZeroPage, 3 };
         instr_lookup_table[0xcc] = .{ Op.CPY, AddressMode.Absolute, 4 };
 
-        // Set Carry
+        // Set/Clear Carry
         instr_lookup_table[0x38] = .{ Op.SEC, AddressMode.Implied, 2 };
+        instr_lookup_table[0x18] = .{ Op.CLC, AddressMode.Implied, 2 };
+
+        // NOP
+        instr_lookup_table[0xEA] = .{ Op.NOP, AddressMode.Implied, 2 };
 
         // ORA
         instr_lookup_table[0x09] = .{ Op.ORA, AddressMode.Immediate, 2 };

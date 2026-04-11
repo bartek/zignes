@@ -311,6 +311,9 @@ pub const CPU = struct {
             Op.SEC => {
                 self.setFlag(flagCarry, true);
             },
+            Op.CLC => {
+                self.setFlag(flagCarry, false);
+            },
             Op.STX => {
                 self.Bus.write(self.addressOfInstruction(instruction), self.X);
             },
@@ -384,6 +387,10 @@ pub const CPU = struct {
                 const lo: u16 = self.Bus.read(0xFFFE);
                 const hi: u16 = self.Bus.read(0xFFFF);
                 self.PC = (hi << 8) | lo;
+            },
+            Op.NOP => {
+                // NOP: consume the operand (if any) but do nothing
+                if (instruction[1] != .Implied) _ = self.operator(instruction);
             },
             Op.Undefined => unreachable,
         }
