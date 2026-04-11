@@ -230,6 +230,7 @@ fn makeLookupTable() [256]Instruction {
 
         // NOP
         instr_lookup_table[0xEA] = .{ Op.NOP, AddressMode.Implied, 2 };
+        instr_lookup_table[0xE2] = .{ Op.NOP, AddressMode.Immediate, 2 }; // unofficial
 
         // ORA
         instr_lookup_table[0x09] = .{ Op.ORA, AddressMode.Immediate, 2 };
