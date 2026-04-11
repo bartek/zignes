@@ -424,7 +424,9 @@ pub const CPU = struct {
                 }
             },
             Op.JSR => {
-                const return_addr = self.PC + 2;
+                // 6502 pushes address of last byte of JSR instruction (PC+1),
+                // RTS will pull this and add 1 to get the return address.
+                const return_addr = self.PC + 1;
                 self.push(@intCast(return_addr >> 8));
                 self.push(@intCast(return_addr & 0xFF));
                 self.PC = self.getAddress16();

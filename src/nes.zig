@@ -35,6 +35,11 @@ pub const NES = struct {
         cpu.* = CPU.init(allocator, bus);
         ppu.* = PPU{ .cart = cart };
 
+        // Read reset vector to set CPU entry point
+        const lo: u16 = bus.read(0xFFFC);
+        const hi: u16 = bus.read(0xFFFD);
+        cpu.PC = (hi << 8) | lo;
+
         return .{
             .allocator = allocator,
             .cart = cart,

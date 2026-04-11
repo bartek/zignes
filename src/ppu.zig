@@ -210,58 +210,81 @@ pub const PPU = struct {
     // Render PPU framebuffer to pixel data
     // Returns a buffer of (256 * 240 * 4) bytes in RGBA format
     pub fn render(self: *const PPU, buffer: []u8) void {
-        self.debugRenderPatternTable(buffer);
+        self.renderBackground(buffer);
     }
 
-    // Render all 512 tiles from CHR-ROM to the screen. This mostly exists for
-    // debugging/tinkering early on in development.
-    pub fn debugRenderPatternTable(self: *const PPU, buffer: []u8) void {
+    // reads the 32x30 title grid from the active nametable, looks up CHR-ROM pattern
+    // data, and outputs grayscale pixels.
+    fn renderBackground(self: *const PPU, buffer: []u8) void {
         @memset(buffer, 0);
 
         const cart = self.cart orelse return;
         const chr = cart.chr_rom;
         if (chr.len == 0) return;
 
-        // Pattern table 0 starts at $0000, Table 1 at $1000
-        // Each table is 256 tiles, each tile is 16 bytes
-        for (0..512) |tile_idx| {
-            const tile_x = tile_idx % 32; // 32 tiles per row (256 pixels)
-            const tile_y = tile_idx / 32;
+        const bg_table: u16 = @as(u16, self.ppu_ctrl.background_pattern) * 0x1000;
+        const nt_base: u16 = 0x2000 + @as(u16, self.ppu_ctrl.nametable) * 0x400;
 
-            const base = tile_idx * 16;
-            if (base + 16 > chr.len) break;
+        for (0..30) |tile_y| {
+            for (0..32) |tile_x| {
+                const nt_addr = nt_base + @as(u16, @intCast(tile_y)) * 32 + @as(u16, @intCast(tile_x));
+                const tile_index: u16 = self.vram[self.mirrorVramAddr(nt_addr)];
+                const pattern_addr = bg_table + tile_index * 16;
 
-            for (0..8) |y| {
-                const low_byte = chr[base + y]; // Plane 0
-                const high_byte = chr[base + y + 8]; // Plane 1
+                for (0..8) |row| {
+                    const low_byte = chr[pattern_addr + row];
+                    const high_byte = chr[pattern_addr + row + 8];
 
-                for (0..8) |x| {
-                    const bit0 = (low_byte >> @intCast(7 - x)) & 1;
-                    const bit1 = (high_byte >> @intCast(7 - x)) & 1;
-                    const color_idx = (bit1 << 1) | bit0;
+                    for (0..8) |col| {
+                        const shift: u3 = @intCast(7 - col);
+                        const bit0 = (low_byte >> shift) & 1;
+                        const bit1 = (high_byte >> shift) & 1;
+                        const color_val: u8 = (bit1 << 1) | bit0;
 
-                    const color: u32 = switch (color_idx) {
-                        0 => 0x000000FF, // Black
-                        1 => 0xAAAAAAFF, // Gray
-                        2 => 0xDDDDDDFF, // Light Gray
-                        3 => 0xFFFFFFFF, // White
-                        else => unreachable,
-                    };
-
-                    const pixel_x = (tile_x * 8) + x;
-                    const pixel_y = (tile_y * 8) + y;
-
-                    if (pixel_x < 256 and pixel_y < 240) {
+                        const pixel_x = tile_x * 8 + col;
+                        const pixel_y = tile_y * 8 + row;
                         const offset = (pixel_y * 256 + pixel_x) * 4;
-                        buffer[offset + 0] = @intCast((color >> 24) & 0xFF); // R
-                        buffer[offset + 1] = @intCast((color >> 16) & 0xFF); // G
-                        buffer[offset + 2] = @intCast((color >> 8) & 0xFF); // B
-                        buffer[offset + 3] = @intCast(color & 0xFF); // A
+
+                        // Use palette[0] for background, grays for 1-3
+                        const rgb: [3]u8 = if (color_val == 0)
+                            nes_palette[self.palette[0] & 0x3F]
+                        else switch (color_val) {
+                            1 => .{ 0x6A, 0x6A, 0x6A },
+                            2 => .{ 0xAA, 0xAA, 0xAA },
+                            3 => .{ 0xFF, 0xFF, 0xFF },
+                            else => unreachable,
+                        };
+
+                        buffer[offset + 0] = rgb[0]; // R
+                        buffer[offset + 1] = rgb[1]; // G
+                        buffer[offset + 2] = rgb[2]; // B
+                        buffer[offset + 3] = 0xFF; // A
                     }
                 }
             }
         }
     }
+};
+
+// 2C02 PPU system palette: maps 6-bit NES color index to RGB.
+// ref: https://www.nesdev.org/wiki/PPU_palettes
+const nes_palette = [64][3]u8{
+    .{ 0x62, 0x62, 0x62 }, .{ 0x00, 0x2E, 0x98 }, .{ 0x15, 0x14, 0xA5 }, .{ 0x35, 0x00, 0x93 },
+    .{ 0x4C, 0x00, 0x72 }, .{ 0x56, 0x00, 0x3E }, .{ 0x52, 0x05, 0x00 }, .{ 0x3F, 0x18, 0x00 },
+    .{ 0x22, 0x2B, 0x00 }, .{ 0x05, 0x39, 0x00 }, .{ 0x00, 0x3C, 0x00 }, .{ 0x00, 0x35, 0x22 },
+    .{ 0x00, 0x2A, 0x66 }, .{ 0x00, 0x00, 0x00 }, .{ 0x00, 0x00, 0x00 }, .{ 0x00, 0x00, 0x00 },
+    .{ 0xAB, 0xAB, 0xAB }, .{ 0x0F, 0x63, 0xDE }, .{ 0x37, 0x40, 0xFE }, .{ 0x6B, 0x25, 0xFE },
+    .{ 0x90, 0x15, 0xC8 }, .{ 0x9E, 0x15, 0x80 }, .{ 0x98, 0x23, 0x2A }, .{ 0x80, 0x3D, 0x00 },
+    .{ 0x5B, 0x56, 0x00 }, .{ 0x30, 0x6A, 0x00 }, .{ 0x10, 0x70, 0x00 }, .{ 0x00, 0x68, 0x42 },
+    .{ 0x00, 0x5C, 0x9E }, .{ 0x00, 0x00, 0x00 }, .{ 0x00, 0x00, 0x00 }, .{ 0x00, 0x00, 0x00 },
+    .{ 0xFF, 0xFF, 0xFF }, .{ 0x53, 0xAE, 0xFF }, .{ 0x70, 0x8E, 0xFF }, .{ 0xA2, 0x7B, 0xFF },
+    .{ 0xDE, 0x6C, 0xFF }, .{ 0xEF, 0x6D, 0xC4 }, .{ 0xF0, 0x7A, 0x69 }, .{ 0xD5, 0x92, 0x16 },
+    .{ 0xAC, 0xA9, 0x00 }, .{ 0x7F, 0xBC, 0x00 }, .{ 0x5A, 0xC5, 0x13 }, .{ 0x42, 0xBF, 0x62 },
+    .{ 0x47, 0xB4, 0xBB }, .{ 0x4A, 0x4A, 0x4A }, .{ 0x00, 0x00, 0x00 }, .{ 0x00, 0x00, 0x00 },
+    .{ 0xFF, 0xFF, 0xFF }, .{ 0xB6, 0xDA, 0xFF }, .{ 0xC5, 0xCA, 0xFF }, .{ 0xDA, 0xC2, 0xFF },
+    .{ 0xF0, 0xBE, 0xFF }, .{ 0xF8, 0xBF, 0xE4 }, .{ 0xF8, 0xC5, 0xBB }, .{ 0xEE, 0xCF, 0x9C },
+    .{ 0xDA, 0xDA, 0x8B }, .{ 0xC4, 0xE3, 0x8B }, .{ 0xB2, 0xE8, 0x97 }, .{ 0xA6, 0xE5, 0xB4 },
+    .{ 0xA8, 0xDF, 0xDB }, .{ 0xB0, 0xB0, 0xB0 }, .{ 0x00, 0x00, 0x00 }, .{ 0x00, 0x00, 0x00 },
 };
 
 // 7  bit  0
