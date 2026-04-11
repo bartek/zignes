@@ -12,10 +12,16 @@ pub const Op = enum(u8) {
     BMI,
     BNE,
     BPL,
+    BIT,
     BRK,
     BVC,
-    CLC,
     BVS,
+    CLC,
+    CLD,
+    CLI,
+    CLV,
+    CMP,
+    CPX,
     CPY,
     DEC,
     DEX,
@@ -29,8 +35,11 @@ pub const Op = enum(u8) {
     LDX,
     LDY,
     ORA,
+    EOR,
     LSR,
     NOP,
+    ROL,
+    ROR,
     PHA,
     PHP,
     PLA,
@@ -39,6 +48,8 @@ pub const Op = enum(u8) {
     RTS,
     SBC,
     SEC,
+    SED,
+    SEI,
     STA,
     STX,
     STY,
@@ -220,13 +231,57 @@ fn makeLookupTable() [256]Instruction {
         instr_lookup_table[0x91] = .{ Op.STA, AddressMode.IndirectY, 6 };
 
         // Compare
+        instr_lookup_table[0xc9] = .{ Op.CMP, AddressMode.Immediate, 2 };
+        instr_lookup_table[0xc5] = .{ Op.CMP, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0xd5] = .{ Op.CMP, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0xcd] = .{ Op.CMP, AddressMode.Absolute, 4 };
+        instr_lookup_table[0xdd] = .{ Op.CMP, AddressMode.AbsoluteX, 4 };
+        instr_lookup_table[0xd9] = .{ Op.CMP, AddressMode.AbsoluteY, 4 };
+        instr_lookup_table[0xc1] = .{ Op.CMP, AddressMode.IndirectX, 6 };
+        instr_lookup_table[0xd1] = .{ Op.CMP, AddressMode.IndirectY, 5 };
+        instr_lookup_table[0xe0] = .{ Op.CPX, AddressMode.Immediate, 2 };
+        instr_lookup_table[0xe4] = .{ Op.CPX, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0xec] = .{ Op.CPX, AddressMode.Absolute, 4 };
         instr_lookup_table[0xc0] = .{ Op.CPY, AddressMode.Immediate, 2 };
         instr_lookup_table[0xc4] = .{ Op.CPY, AddressMode.ZeroPage, 3 };
         instr_lookup_table[0xcc] = .{ Op.CPY, AddressMode.Absolute, 4 };
 
-        // Set/Clear Carry
+        // EOR
+        instr_lookup_table[0x49] = .{ Op.EOR, AddressMode.Immediate, 2 };
+        instr_lookup_table[0x45] = .{ Op.EOR, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0x55] = .{ Op.EOR, AddressMode.ZeroPageX, 4 };
+        instr_lookup_table[0x4d] = .{ Op.EOR, AddressMode.Absolute, 4 };
+        instr_lookup_table[0x5d] = .{ Op.EOR, AddressMode.AbsoluteX, 4 };
+        instr_lookup_table[0x59] = .{ Op.EOR, AddressMode.AbsoluteY, 4 };
+        instr_lookup_table[0x41] = .{ Op.EOR, AddressMode.IndirectX, 6 };
+        instr_lookup_table[0x51] = .{ Op.EOR, AddressMode.IndirectY, 5 };
+
+        // BIT
+        instr_lookup_table[0x24] = .{ Op.BIT, AddressMode.ZeroPage, 3 };
+        instr_lookup_table[0x2c] = .{ Op.BIT, AddressMode.Absolute, 4 };
+
+        // ROL
+        instr_lookup_table[0x2a] = .{ Op.ROL, AddressMode.Implied, 2 };
+        instr_lookup_table[0x26] = .{ Op.ROL, AddressMode.ZeroPage, 5 };
+        instr_lookup_table[0x36] = .{ Op.ROL, AddressMode.ZeroPageX, 6 };
+        instr_lookup_table[0x2e] = .{ Op.ROL, AddressMode.Absolute, 6 };
+        instr_lookup_table[0x3e] = .{ Op.ROL, AddressMode.AbsoluteX, 7 };
+
+        // ROR
+        instr_lookup_table[0x6a] = .{ Op.ROR, AddressMode.Implied, 2 };
+        instr_lookup_table[0x66] = .{ Op.ROR, AddressMode.ZeroPage, 5 };
+        instr_lookup_table[0x76] = .{ Op.ROR, AddressMode.ZeroPageX, 6 };
+        instr_lookup_table[0x6e] = .{ Op.ROR, AddressMode.Absolute, 6 };
+        instr_lookup_table[0x7e] = .{ Op.ROR, AddressMode.AbsoluteX, 7 };
+
+        // Set/Clear flags
         instr_lookup_table[0x38] = .{ Op.SEC, AddressMode.Implied, 2 };
         instr_lookup_table[0x18] = .{ Op.CLC, AddressMode.Implied, 2 };
+        instr_lookup_table[0xf8] = .{ Op.SED, AddressMode.Implied, 2 };
+        instr_lookup_table[0xd8] = .{ Op.CLD, AddressMode.Implied, 2 };
+        instr_lookup_table[0x78] = .{ Op.SEI, AddressMode.Implied, 2 };
+        instr_lookup_table[0x58] = .{ Op.CLI, AddressMode.Implied, 2 };
+        instr_lookup_table[0xb8] = .{ Op.CLV, AddressMode.Implied, 2 };
 
         // NOP
         instr_lookup_table[0xEA] = .{ Op.NOP, AddressMode.Implied, 2 };
@@ -267,10 +322,10 @@ fn makeLookupTable() [256]Instruction {
 pub const UndefinedInstruction: Instruction = .{ Op.Undefined, AddressMode.Undefined, 0 };
 const lookup_table = makeLookupTable();
 
-pub fn decodeInstruction(opcode: u8) *const Instruction {
+pub fn decodeInstruction(opcode: u8, pc: u16) *const Instruction {
     const instruction = &lookup_table[opcode];
     if (instruction[0] == Op.Undefined) {
-        panic("Undefined opcode: 0x{x:0>2}", .{opcode});
+        panic("Undefined opcode: 0x{x:0>2} at PC=0x{x:0>4}", .{ opcode, pc });
     }
     return instruction;
 }

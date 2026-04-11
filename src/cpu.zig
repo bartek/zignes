@@ -90,8 +90,9 @@ pub const CPU = struct {
             .none => {},
         }
 
+        const pc = self.PC;
         const opcode = self.fetchOpcode();
-        const instruction = instructions.decodeInstruction(opcode);
+        const instruction = instructions.decodeInstruction(opcode, pc);
 
         self.exec(instruction);
 
@@ -112,7 +113,7 @@ pub const CPU = struct {
         }
 
         // exec a single instruction
-        const instruction = instructions.decodeInstruction(self.fetchOpcode());
+        const instruction = instructions.decodeInstruction(self.fetchOpcode(), 0);
         self.exec(instruction);
 
         var final_ram = try self.allocator.alloc(struct { u16, u8 }, initial_state.ram.len);
@@ -213,11 +214,29 @@ pub const CPU = struct {
                 self.Y -%= 1;
                 self.setZN(self.Y);
             },
+            Op.EOR => {
+                const b = self.operator(instruction);
+                const result: u8 = self.A ^ b;
+                self.A = result;
+                self.setZN(result);
+            },
             Op.ORA => {
                 const b = self.operator(instruction);
                 const result: u8 = self.A | b;
                 self.A = result;
                 self.setZN(result);
+            },
+            Op.CMP => {
+                const b = self.operator(instruction);
+                const result, _ = @subWithOverflow(self.A, b);
+                self.setZN(result);
+                self.setFlag(flagCarry, self.A >= b);
+            },
+            Op.CPX => {
+                const b = self.operator(instruction);
+                const result, _ = @subWithOverflow(self.X, b);
+                self.setZN(result);
+                self.setFlag(flagCarry, self.X >= b);
             },
             Op.CPY => {
                 const b = self.operator(instruction);
@@ -249,6 +268,42 @@ pub const CPU = struct {
                 val >>= 1;
                 self.Bus.write(addr, val);
                 self.setZN(val);
+            },
+            Op.ROL => {
+                const old_carry: u8 = if (self.getCarry()) 1 else 0;
+                if (instruction[1] == AddressMode.Implied) {
+                    self.setFlag(flagCarry, (self.A & 0x80) != 0);
+                    self.A = (self.A << 1) | old_carry;
+                    self.setZN(self.A);
+                    return;
+                }
+                const addr = self.addressOfInstruction(instruction);
+                var val: u8 = self.Bus.read(addr);
+                self.setFlag(flagCarry, (val & 0x80) != 0);
+                val = (val << 1) | old_carry;
+                self.Bus.write(addr, val);
+                self.setZN(val);
+            },
+            Op.ROR => {
+                const old_carry: u8 = if (self.getCarry()) 0x80 else 0;
+                if (instruction[1] == AddressMode.Implied) {
+                    self.setFlag(flagCarry, (self.A & 0x01) != 0);
+                    self.A = (self.A >> 1) | old_carry;
+                    self.setZN(self.A);
+                    return;
+                }
+                const addr = self.addressOfInstruction(instruction);
+                var val: u8 = self.Bus.read(addr);
+                self.setFlag(flagCarry, (val & 0x01) != 0);
+                val = (val >> 1) | old_carry;
+                self.Bus.write(addr, val);
+                self.setZN(val);
+            },
+            Op.BIT => {
+                const b = self.operator(instruction);
+                self.setFlag(flagZero, (self.A & b) == 0);
+                self.setFlag(flagOverflow, (b & 0x40) != 0);
+                self.setFlag(flagNegative, (b & 0x80) != 0);
             },
 
             Op.TAX => {
@@ -313,6 +368,21 @@ pub const CPU = struct {
             },
             Op.CLC => {
                 self.setFlag(flagCarry, false);
+            },
+            Op.CLD => {
+                self.setFlag(flagDecimal, false);
+            },
+            Op.CLI => {
+                self.setFlag(flagInterrupt, false);
+            },
+            Op.CLV => {
+                self.setFlag(flagOverflow, false);
+            },
+            Op.SED => {
+                self.setFlag(flagDecimal, true);
+            },
+            Op.SEI => {
+                self.setFlag(flagInterrupt, true);
             },
             Op.STX => {
                 self.Bus.write(self.addressOfInstruction(instruction), self.X);
@@ -799,6 +869,61 @@ test "ASL, LSR" {
     try runTestsForInstruction("5e");
 }
 
-test "SEC" {
+test "SEC, CLC, SED, CLD, SEI, CLI, CLV" {
     try runTestsForInstruction("38");
+    try runTestsForInstruction("18");
+    try runTestsForInstruction("f8");
+    try runTestsForInstruction("d8");
+    try runTestsForInstruction("78");
+    try runTestsForInstruction("58");
+    try runTestsForInstruction("b8");
+}
+
+test "CMP, CPX" {
+    try runTestsForInstruction("c9");
+    try runTestsForInstruction("c5");
+    try runTestsForInstruction("d5");
+    try runTestsForInstruction("cd");
+    try runTestsForInstruction("dd");
+    try runTestsForInstruction("d9");
+    try runTestsForInstruction("c1");
+    try runTestsForInstruction("d1");
+
+    try runTestsForInstruction("e0");
+    try runTestsForInstruction("e4");
+    try runTestsForInstruction("ec");
+}
+
+test "EOR" {
+    try runTestsForInstruction("49");
+    try runTestsForInstruction("45");
+    try runTestsForInstruction("55");
+    try runTestsForInstruction("4d");
+    try runTestsForInstruction("5d");
+    try runTestsForInstruction("59");
+    try runTestsForInstruction("41");
+    try runTestsForInstruction("51");
+}
+
+test "ROL, ROR" {
+    try runTestsForInstruction("2a");
+    try runTestsForInstruction("26");
+    try runTestsForInstruction("36");
+    try runTestsForInstruction("2e");
+    try runTestsForInstruction("3e");
+
+    try runTestsForInstruction("6a");
+    try runTestsForInstruction("66");
+    try runTestsForInstruction("76");
+    try runTestsForInstruction("6e");
+    try runTestsForInstruction("7e");
+}
+
+test "BIT" {
+    try runTestsForInstruction("24");
+    try runTestsForInstruction("2c");
+}
+
+test "NOP" {
+    try runTestsForInstruction("ea");
 }
