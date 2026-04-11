@@ -76,6 +76,13 @@ pub const Header = extern struct {
     // rarely used and ignored for implementation.
     prg_ram_size: u8 = 0,
 
+    // Bytes 9-15: unused padding to fill out the 16-byte iNES header
+    _padding: [7]u8 = [_]u8{0} ** 7,
+
+    comptime {
+        assert(@sizeOf(Header) == 16);
+    }
+
     pub fn isValid(self: Header) bool {
         return self.NES.N == 'N' and
             self.NES.E == 'E' and
