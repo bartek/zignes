@@ -35,6 +35,7 @@ pub const PPU = struct {
 
     cycle: u16 = 0,
     scanline: u16 = 0,
+    nmi_triggered: bool = false,
 
     // read a byte from PPU memory
     fn ppuRead(self: *PPU, addr: u16) u8 {
@@ -124,9 +125,14 @@ pub const PPU = struct {
 
         switch (addr) {
             0 => { // PPUCTRL
+                const was_nmi_off = self.ppu_ctrl.nmi_enable == 0;
                 self.ppu_ctrl = @bitCast(val);
                 // Also update the nametable bits in the temporary register `t`
                 self.t.nametable = self.ppu_ctrl.nametable;
+                // Hardware quirk: enabling NMI while already in vblank triggers immediately
+                if (was_nmi_off and self.ppu_ctrl.nmi_enable == 1 and self.ppu_status.vblank_started == 1) {
+                    self.nmi_triggered = true;
+                }
             },
             1 => self.ppu_mask = @bitCast(val), // PPUMASK
             2 => return, // PPUSTATUS is read only
@@ -184,8 +190,12 @@ pub const PPU = struct {
             self.cycle = 0;
             self.scanline += 1;
 
+            // Called at the start of vblank (scanline 241, dot 1)
             if (self.scanline == 241) {
                 self.ppu_status.vblank_started = 1;
+                if (self.ppu_ctrl.nmi_enable == 1) {
+                    self.nmi_triggered = true;
+                }
             }
 
             if (self.scanline >= 261) {

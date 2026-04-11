@@ -60,12 +60,34 @@ pub const CPU = struct {
             return self.Halt == 0;
         }
 
-        // TODO: interrupts
         switch (self.interrupt) {
-            .irq => {}, // call irq func
-            .nmi => {}, // call nmi func
-            // then for both above, self.interrupt = .none
-            else => {},
+            // non-maskable interrupt
+            // ref: https://www.nesdev.org/wiki/NMI
+            .nmi => {
+                // Push the return address high byte onto the stack.
+                self.push(@intCast(self.PC >> 8));
+
+                // Push the return address low byte onto the stack.
+                self.push(@intCast(self.PC & 0xFF));
+
+                // Push the processor status register (P) onto the stack. Note that the B
+                // flag will be set to 0.
+                self.push((self.P & ~flagBreak) | (1 << 5));
+
+                // Set interrupt disable flag
+                self.P |= flagInterrupt;
+
+                // Jump to NMI vector at $FFFA
+                const lo: u16 = self.Bus.read(0xFFFA);
+                const hi: u16 = self.Bus.read(0xFFFB);
+                self.PC = (hi << 8) | lo;
+
+                self.interrupt = .none;
+                self.Halt +%= 7; // NMI takes 7 cycles
+                return false;
+            },
+            .irq => {}, // TODO
+            .none => {},
         }
 
         const opcode = self.fetchOpcode();

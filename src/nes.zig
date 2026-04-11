@@ -51,6 +51,12 @@ pub const NES = struct {
         self.ppu.tick();
         self.ppu.tick();
         self.ppu.tick();
+
+        // Deliver NMI from PPU to CPU
+        if (self.ppu.nmi_triggered) {
+            self.cpu.interrupt = .nmi;
+            self.ppu.nmi_triggered = false;
+        }
     }
 
     pub fn deinit(self: *NES) void {
