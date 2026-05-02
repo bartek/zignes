@@ -213,8 +213,10 @@ pub const PPU = struct {
         self.renderBackground(buffer);
     }
 
-    // reads the 32x30 title grid from the active nametable, looks up CHR-ROM pattern
+    // reads the 32x30 tile grid from the active nametable, looks up CHR-ROM pattern
     // data, and outputs grayscale pixels.
+    // ref: https://www.nesdev.org/wiki/PPU_nametables
+    // ref: https://www.nesdev.org/wiki/PPU_pattern_tables
     fn renderBackground(self: *const PPU, buffer: []u8) void {
         @memset(buffer, 0);
 

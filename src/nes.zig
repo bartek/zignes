@@ -35,7 +35,10 @@ pub const NES = struct {
         cpu.* = CPU.init(allocator, bus);
         ppu.* = PPU{ .cart = cart };
 
-        // Read reset vector to set CPU entry point
+        // Read reset vector to set CPU entry point.
+        // The iNES header (parsed in cartridge.zig) tells us the PRG-ROM and CHR-ROM
+        // sizes. PRG-ROM is mapped into CPU address space, so we can read the reset
+        // vector at $FFFC-$FFFD to find where execution begins.
         const lo: u16 = bus.read(0xFFFC);
         const hi: u16 = bus.read(0xFFFD);
         cpu.PC = (hi << 8) | lo;
