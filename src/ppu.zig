@@ -18,7 +18,24 @@ pub const PPU = struct {
 
     // PPU Memory
     vram: [2048]u8 = [_]u8{0} ** 2048, // 2KB internal VRAM
-    palette: [32]u8 = [_]u8{0} ** 32, // 32 bytes of palette RAM
+    // 32 bytes of palette RAM. First 16 for backgrounds, last 16 for sprites.
+    // These 16 background bytes are four groups of four:
+    //
+    //   Index:   0  1  2  3    4  5  6  7    8  9 10 11   12 13 14 15
+    //           ├─────────┤   ├─────────┤   ├─────────┤   ├─────────┤
+    //            palette 0     palette 1     palette 2     palette 3
+    //
+    // Each slot holds a number from 0-63. That number is an index into the NES palette, a
+    // fixed lookup table baked into PPU hardware.
+    //
+    // So if palette[7] contains 0x16, that means: "palette 1, colour 3 is NES system
+    // colour 0x16". We have two numbers: palette index identifing which palette group.
+    // And colour_val (0-3) which colour within that group.
+    //
+    // So, to get the right slot, we do array indexing:
+    //
+    // slot = palette_index * 4 + color_val (*4 because each palette is 4 entries wide)
+    palette: [32]u8 = [_]u8{0} ** 32,
     oam: [256]u8 = [_]u8{0} ** 256,
 
     // Loopy registers. These render the background and support scrolling
@@ -233,6 +250,22 @@ pub const PPU = struct {
                 const tile_index: u16 = self.vram[self.mirrorVramAddr(nt_addr)];
                 const pattern_addr = bg_table + tile_index * 16;
 
+                // Calculate which attribute byte covers this tile.
+                // Each attribute byte covers a 4*4 tile region. The attribute table is 8
+                // bytes wide (8 * 4 = 32 tiles = screen width). So for any tile at
+                // (tile_x, tile_y), index = (y/4) * 8 + (x/4)
+                const attr_addr = nt_base + 0x3c0 + (@as(u16, @intCast(tile_y)) / 4) * 8 + (@as(u16, @intCast(tile_x)) / 4);
+                const attr_byte = self.vram[self.mirrorVramAddr(attr_addr)];
+
+                // Then, quadrant shift. Each attribute byte packs 4 palette selections (2
+                // bits each) for four 2*2-tile quadrants. We need to know which quadrant
+                // the tile falls in. Division gives us the 2-tile column and then
+                // identify odd/even placement with bitwise & 1
+                const quadrant_x = (tile_x / 2) & 1;
+                const quadrant_y = (tile_y / 2) & 1;
+                const pshift: u3 = @intCast((quadrant_y * 2 + quadrant_x) * 2);
+                const palette_index: u8 = (attr_byte >> pshift) & 0x03;
+
                 for (0..8) |row| {
                     const low_byte = chr[pattern_addr + row];
                     const high_byte = chr[pattern_addr + row + 8];
@@ -247,15 +280,10 @@ pub const PPU = struct {
                         const pixel_y = tile_y * 8 + row;
                         const offset = (pixel_y * 256 + pixel_x) * 4;
 
-                        // Use palette[0] for background, grays for 1-3
                         const rgb: [3]u8 = if (color_val == 0)
                             nes_palette[self.palette[0] & 0x3F]
-                        else switch (color_val) {
-                            1 => .{ 0x6A, 0x6A, 0x6A },
-                            2 => .{ 0xAA, 0xAA, 0xAA },
-                            3 => .{ 0xFF, 0xFF, 0xFF },
-                            else => unreachable,
-                        };
+                        else
+                            nes_palette[self.palette[palette_index * 4 + color_val] & 0x3f];
 
                         buffer[offset + 0] = rgb[0]; // R
                         buffer[offset + 1] = rgb[1]; // G
