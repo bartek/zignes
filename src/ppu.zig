@@ -383,6 +383,8 @@ pub const PPU = struct {
             const tile: u16 = self.oam[base + 1]; // which 8x8 pattern to draw from CHRROM
             const attrs = self.oam[base + 2];
             const sprite_palette: u8 = (attrs & 0x03) + 4; // palettes 4-7
+            const flip_h = (attrs & 0x40) != 0;
+            const flip_v = (attrs & 0x80) != 0;
             const x: u16 = self.oam[base + 3];
 
             if (y >= 240) continue; // hide anything off screen
@@ -392,8 +394,9 @@ pub const PPU = struct {
             for (0..8) |row| {
                 // Same as background: Each row of a tile is two bytes, lo/hi bitplane
                 // seperated by 8 bytes
-                const low_byte = chr[pattern_addr + row];
-                const high_byte = chr[pattern_addr + row + 8];
+                const actual_row = if (flip_v) 7 - row else row;
+                const low_byte = chr[pattern_addr + actual_row];
+                const high_byte = chr[pattern_addr + actual_row + 8];
 
                 for (0..8) |col| {
                     const pixel_x = x + col;
@@ -401,7 +404,7 @@ pub const PPU = struct {
                     if (pixel_x >= 256 or pixel_y >= 240) continue;
 
                     // Extract 2-bit colour value for pixel.
-                    const shift: u3 = @intCast(7 - col);
+                    const shift: u3 = @intCast(if (flip_h) col else 7 - col);
                     const bit0 = (low_byte >> shift) & 1;
                     const bit1 = (high_byte >> shift) & 1;
                     const color_val: u8 = (bit1 << 1) | bit0;
