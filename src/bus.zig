@@ -89,7 +89,18 @@ pub const NESBus = struct {
             // Use mirroring to reduce the large address space into just the 8 entries
             // we need.
             0x2000...0x3FFF => self.ppu.writeRegister(addr & 0x0007, data),
-            0x4000...0x401F => {}, // TODO: APU & I/O
+            0x4000...0x4013 => {}, // TODO: APU & I/O
+            0x4014 => {
+                // OAM DMA: (see PPU OAM page on nesdev)
+                // Copy 256 bytes from CPU page into PPU OAM
+                // CPU is not suspended, how to handle? Does it matter?
+                const page: u16 = @as(u16, data) << 8;
+                for (0..256) |i| {
+                    const addr_i: u16 = page | @as(u16, @intCast(i));
+                    self.ppu.oam[i] = self.ram[addr_i & 0x07ff];
+                }
+            },
+            0x4015...0x401F => {}, // TODO: APU & I/O cont.
             0x4020...0x5FFF => {}, // TODO: Cartridge expansion ROM
             0x6000...0x7FFF => {}, // TODO: SRAM (battery-backed)
             0x8000...0xFFFF => {}, // PRG ROM is read-only
