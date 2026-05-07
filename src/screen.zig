@@ -104,7 +104,7 @@ pub const Screen = struct {
         c.SDL_RenderPresent(self.renderer);
     }
 
-    fn renderGameArea(self: *Screen, ppu: *const PPU) !void {
+    fn renderGameArea(self: *Screen, ppu: *PPU) !void {
         const allocator = std.heap.page_allocator;
         const buffer = try allocator.alloc(u8, 256 * 240 * 4);
         defer allocator.free(buffer);

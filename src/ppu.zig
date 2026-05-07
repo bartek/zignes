@@ -4,12 +4,57 @@ const Cartridge = @import("cartridge.zig").Cartridge;
 pub const VramAddr = packed struct {
     coarse_x: u5 = 0, // bits 0–4
     coarse_y: u5 = 0, // bits 5–9
+    // nametable holds 0-3, representing the four nametables to pick from
     nametable: u2 = 0, // bits 10–11
     fine_y: u3 = 0, // bits 12–14
     comptime {
         std.debug.assert(@bitSizeOf(VramAddr) == 15);
     }
 };
+
+// See Coarse X Increment
+// https://www.nesdev.org/wiki/PPU_scrolling#At_dot_257_of_each_scanline
+fn incrementCoarseX(v: *VramAddr) void {
+    if (v.coarse_x == 31) {
+        v.coarse_x = 0;
+        // bounce between left and right nametables; 0b00 -> 0b01 (left->right), 0b01
+        // -> 0b00 (right -> left), etc..
+        v.nametable ^= 0b01;
+    } else {
+        v.coarse_x += 1;
+    }
+}
+
+// See Coarse Y increment
+// https://www.nesdev.org/wiki/PPU_scrolling#At_dot_257_of_each_scanline
+fn incrementY(v: *VramAddr) void {
+    if (v.fine_y < 7) {
+        v.fine_y += 1;
+    } else {
+        v.fine_y = 0;
+        if (v.coarse_y == 29) {
+            v.coarse_y = 0;
+            v.nametable ^= 0b10;
+        } else if (v.coarse_y == 31) {
+            v.coarse_y = 0;
+        } else {
+            v.coarse_y += 1;
+        }
+    }
+}
+
+fn resetHorizontal(v: *VramAddr, t: VramAddr) void {
+    v.coarse_x = t.coarse_x;
+    // copy horizontal (0b10) and preserve vertical (0b01)
+    v.nametable = (v.nametable & 0b10) | (t.nametable & 0b01);
+}
+
+fn resetVertical(v: *VramAddr, t: VramAddr) void {
+    v.coarse_y = t.coarse_y;
+    v.fine_y = t.fine_y;
+    // preserve horizontal (& 0b01) and copy vertical (0b10)
+    v.nametable = (v.nametable & 0b01) | (t.nametable & 0b10);
+}
 
 pub const PPU = struct {
     ppu_ctrl: PPUCTRL = .{},
@@ -226,7 +271,7 @@ pub const PPU = struct {
 
     // Render PPU framebuffer to pixel data
     // Returns a buffer of (256 * 240 * 4) bytes in RGBA format
-    pub fn render(self: *const PPU, buffer: []u8) void {
+    pub fn render(self: *PPU, buffer: []u8) void {
         self.renderBackground(buffer);
     }
 
@@ -234,19 +279,36 @@ pub const PPU = struct {
     // data, and outputs grayscale pixels.
     // ref: https://www.nesdev.org/wiki/PPU_nametables
     // ref: https://www.nesdev.org/wiki/PPU_pattern_tables
-    fn renderBackground(self: *const PPU, buffer: []u8) void {
+    //
+    // nametable concepts: this is like a ping-pong buffer. While player sees nametable 1
+    // scrolling onto screen, game is writing new tile data into nametable 0 (which is now
+    // offscreen). When coarse_x wraps past nametable 1's edge, it toggles back to
+    // nametable 0 (now with content). This is incrementCoarseX
+    //
+    // Each tile is 8x8 pixels, coarse_y tells us which tile row we're on. fine_y tells us
+    // which pixel row within that tile (0-7)
+    fn renderBackground(self: *PPU, buffer: []u8) void {
         @memset(buffer, 0);
 
         const cart = self.cart orelse return;
         const chr = cart.chr_rom;
         if (chr.len == 0) return;
 
-        const bg_table: u16 = @as(u16, self.ppu_ctrl.background_pattern) * 0x1000;
-        const nt_base: u16 = 0x2000 + @as(u16, self.ppu_ctrl.nametable) * 0x400;
+        var v = self.v; // local snapshot to not stomp on emulation thread
 
-        for (0..30) |tile_y| {
-            for (0..32) |tile_x| {
-                const nt_addr = nt_base + @as(u16, @intCast(tile_y)) * 32 + @as(u16, @intCast(tile_x));
+        const bg_table: u16 = @as(u16, self.ppu_ctrl.background_pattern) * 0x1000;
+
+        resetVertical(&v, self.t);
+
+        for (0..240) |screen_y| {
+            for (0..32) |screen_x| {
+                // nametable address. PPU memory map has four nametables starting at
+                // 0x2000. 0x400 is 1024, which is the size of each nametable. So 0x200 +
+                // nametable * 0x400 gets us the base address of nametable 0, 1, 2, or 3.
+                const nt_addr: u16 = 0x2000 +
+                    @as(u16, v.nametable) * 0x400 +
+                    @as(u16, v.coarse_y) * 32 +
+                    @as(u16, v.coarse_x);
                 const tile_index: u16 = self.vram[self.mirrorVramAddr(nt_addr)];
                 const pattern_addr = bg_table + tile_index * 16;
 
@@ -254,44 +316,49 @@ pub const PPU = struct {
                 // Each attribute byte covers a 4*4 tile region. The attribute table is 8
                 // bytes wide (8 * 4 = 32 tiles = screen width). So for any tile at
                 // (tile_x, tile_y), index = (y/4) * 8 + (x/4)
-                const attr_addr = nt_base + 0x3c0 + (@as(u16, @intCast(tile_y)) / 4) * 8 + (@as(u16, @intCast(tile_x)) / 4);
+                const attr_addr: u16 = 0x2000 +
+                    @as(u16, v.nametable) * 0x400 + 0x3c0 +
+                    (@as(u16, v.coarse_y) / 4) * 8 +
+                    (@as(u16, v.coarse_x) / 4);
                 const attr_byte = self.vram[self.mirrorVramAddr(attr_addr)];
 
                 // Then, quadrant shift. Each attribute byte packs 4 palette selections (2
                 // bits each) for four 2*2-tile quadrants. We need to know which quadrant
                 // the tile falls in. Division gives us the 2-tile column and then
                 // identify odd/even placement with bitwise & 1
-                const quadrant_x = (tile_x / 2) & 1;
-                const quadrant_y = (tile_y / 2) & 1;
+                const quadrant_x = (@as(u8, v.coarse_x) / 2) & 1;
+                const quadrant_y = (@as(u8, v.coarse_y) / 2) & 1;
                 const pshift: u3 = @intCast((quadrant_y * 2 + quadrant_x) * 2);
                 const palette_index: u8 = (attr_byte >> pshift) & 0x03;
 
-                for (0..8) |row| {
-                    const low_byte = chr[pattern_addr + row];
-                    const high_byte = chr[pattern_addr + row + 8];
+                // fine_y picks the row within the tile
+                const row = @as(u16, v.fine_y);
+                const low_byte = chr[pattern_addr + row];
+                const high_byte = chr[pattern_addr + row + 8];
 
-                    for (0..8) |col| {
-                        const shift: u3 = @intCast(7 - col);
-                        const bit0 = (low_byte >> shift) & 1;
-                        const bit1 = (high_byte >> shift) & 1;
-                        const color_val: u8 = (bit1 << 1) | bit0;
+                for (0..8) |col| {
+                    const shift: u3 = @intCast(7 - col);
+                    const bit0 = (low_byte >> shift) & 1;
+                    const bit1 = (high_byte >> shift) & 1;
+                    const color_val: u8 = (bit1 << 1) | bit0;
 
-                        const pixel_x = tile_x * 8 + col;
-                        const pixel_y = tile_y * 8 + row;
-                        const offset = (pixel_y * 256 + pixel_x) * 4;
+                    const pixel_x = screen_x * 8 + col;
+                    const offset = (screen_y * 256 + pixel_x) * 4;
 
-                        const rgb: [3]u8 = if (color_val == 0)
-                            nes_palette[self.palette[0] & 0x3F]
-                        else
-                            nes_palette[self.palette[palette_index * 4 + color_val] & 0x3f];
+                    const rgb: [3]u8 = if (color_val == 0)
+                        nes_palette[self.palette[0] & 0x3F]
+                    else
+                        nes_palette[self.palette[palette_index * 4 + color_val] & 0x3f];
 
-                        buffer[offset + 0] = rgb[0]; // R
-                        buffer[offset + 1] = rgb[1]; // G
-                        buffer[offset + 2] = rgb[2]; // B
-                        buffer[offset + 3] = 0xFF; // A
-                    }
+                    buffer[offset + 0] = rgb[0]; // R
+                    buffer[offset + 1] = rgb[1]; // G
+                    buffer[offset + 2] = rgb[2]; // B
+                    buffer[offset + 3] = 0xFF; // A
                 }
+                incrementCoarseX(&v);
             }
+            incrementY(&v); // after each pixel row, advance Y
+            resetHorizontal(&v, self.t);
         }
     }
 };
