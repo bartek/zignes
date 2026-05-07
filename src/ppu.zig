@@ -381,7 +381,9 @@ pub const PPU = struct {
             const base = i * 4; // each sprite is 4 bytes
             const y: u16 = @as(u16, self.oam[base]) + 1; // + 1 is hardware quirk
             const tile: u16 = self.oam[base + 1]; // which 8x8 pattern to draw from CHRROM
-            const x: u16 = self.oam[base + 3]; // skip byte 2 (attributes) for now
+            const attrs = self.oam[base + 2];
+            const sprite_palette: u8 = (attrs & 0x03) + 4; // palettes 4-7
+            const x: u16 = self.oam[base + 3];
 
             if (y >= 240) continue; // hide anything off screen
 
@@ -406,12 +408,12 @@ pub const PPU = struct {
 
                     if (color_val == 0) continue; // transparent
 
-                    // solid colour for now just to verify positions
                     const offset = (pixel_y * 256 + pixel_x) * 4;
-                    buffer[offset + 0] = 0xff;
-                    buffer[offset + 1] = 0x00;
-                    buffer[offset + 2] = 0x00;
-                    buffer[offset + 3] = 0xff;
+                    const rgb: [3]u8 = nes_palette[self.palette[sprite_palette * 4 + color_val] & 0x3F];
+                    buffer[offset + 0] = rgb[0];
+                    buffer[offset + 1] = rgb[1];
+                    buffer[offset + 2] = rgb[2];
+                    buffer[offset + 3] = 0xFF;
                 }
             }
         }
