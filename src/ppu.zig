@@ -272,7 +272,12 @@ pub const PPU = struct {
     // Render PPU framebuffer to pixel data
     // Returns a buffer of (256 * 240 * 4) bytes in RGBA format
     pub fn render(self: *PPU, buffer: []u8) void {
+        const cart = self.cart orelse return;
+        const chr = cart.chr_rom;
+        if (chr.len == 0) return;
+
         self.renderBackground(buffer);
+        self.renderSprites(buffer);
     }
 
     // reads the 32x30 tile grid from the active nametable, looks up CHR-ROM pattern
@@ -359,6 +364,56 @@ pub const PPU = struct {
             }
             incrementY(&v); // after each pixel row, advance Y
             resetHorizontal(&v, self.t);
+        }
+    }
+
+    fn renderSprites(self: *PPU, buffer: []u8) void {
+        const cart = self.cart orelse return;
+        const chr = cart.chr_rom;
+        if (chr.len == 0) return;
+
+        // PPUCTRL has the bit which selects which pattern table to use. Pattern table 0
+        // begins at $0000, table 1 at $1000. Multiplication via 0x1000 converts the 0 / 1
+        // bit to base address.
+        const sprite_table: u16 = @as(u16, self.ppu_ctrl.sprite_pattern) * 0x1000;
+
+        for (0..64) |i| { // OAM is 256 bytes and each sprite is 4 = 64 sprites
+            const base = i * 4; // each sprite is 4 bytes
+            const y: u16 = @as(u16, self.oam[base]) + 1; // + 1 is hardware quirk
+            const tile: u16 = self.oam[base + 1]; // which 8x8 pattern to draw from CHRROM
+            const x: u16 = self.oam[base + 3]; // skip byte 2 (attributes) for now
+
+            if (y >= 240) continue; // hide anything off screen
+
+            const pattern_addr = sprite_table + tile * 16;
+
+            for (0..8) |row| {
+                // Same as background: Each row of a tile is two bytes, lo/hi bitplane
+                // seperated by 8 bytes
+                const low_byte = chr[pattern_addr + row];
+                const high_byte = chr[pattern_addr + row + 8];
+
+                for (0..8) |col| {
+                    const pixel_x = x + col;
+                    const pixel_y = y + row;
+                    if (pixel_x >= 256 or pixel_y >= 240) continue;
+
+                    // Extract 2-bit colour value for pixel.
+                    const shift: u3 = @intCast(7 - col);
+                    const bit0 = (low_byte >> shift) & 1;
+                    const bit1 = (high_byte >> shift) & 1;
+                    const color_val: u8 = (bit1 << 1) | bit0;
+
+                    if (color_val == 0) continue; // transparent
+
+                    // solid colour for now just to verify positions
+                    const offset = (pixel_y * 256 + pixel_x) * 4;
+                    buffer[offset + 0] = 0xff;
+                    buffer[offset + 1] = 0x00;
+                    buffer[offset + 2] = 0x00;
+                    buffer[offset + 3] = 0xff;
+                }
+            }
         }
     }
 };
