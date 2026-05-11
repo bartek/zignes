@@ -95,6 +95,9 @@ pub const PPU = struct {
 
     cart: ?*const Cartridge = null,
 
+    // Tracking background CHR pattern bits
+    bg_opaque: [256 * 240]bool = [_]bool{false} ** (256 * 240),
+
     cycle: u16 = 0,
     scanline: u16 = 0,
     nmi_triggered: bool = false,
@@ -350,6 +353,10 @@ pub const PPU = struct {
                     const pixel_x = screen_x * 8 + col;
                     const offset = (screen_y * 256 + pixel_x) * 4;
 
+                    // We must record the opacity of the background bit, so we can use as
+                    // part of sprite priority when rendering sprites.
+                    self.bg_opaque[screen_y * 256 + pixel_x] = (color_val != 0);
+
                     const rgb: [3]u8 = if (color_val == 0)
                         nes_palette[self.palette[0] & 0x3F]
                     else
@@ -382,9 +389,17 @@ pub const PPU = struct {
             const y: u16 = @as(u16, self.oam[base]) + 1; // + 1 is hardware quirk
             const tile: u16 = self.oam[base + 1]; // which 8x8 pattern to draw from CHRROM
             const attrs = self.oam[base + 2];
+            // 76543210
+            // ||||||||
+            // ||||||++- Palette (4 to 7) of sprite
+            // |||+++--- Unimplemented (read 0)
+            // ||+------ Priority (0: in front of background; 1: behind background)
+            // |+------- Flip sprite horizontally
+            // +-------- Flip sprite vertically
             const sprite_palette: u8 = (attrs & 0x03) + 4; // palettes 4-7
             const flip_h = (attrs & 0x40) != 0;
             const flip_v = (attrs & 0x80) != 0;
+            const behind_bg = (attrs & 0x20) != 0;
             const x: u16 = self.oam[base + 3];
 
             if (y >= 240) continue; // hide anything off screen
@@ -410,6 +425,8 @@ pub const PPU = struct {
                     const color_val: u8 = (bit1 << 1) | bit0;
 
                     if (color_val == 0) continue; // transparent
+                    // And also skip if behind background
+                    if (behind_bg and self.bg_opaque[pixel_y * 256 + pixel_x]) continue;
 
                     const offset = (pixel_y * 256 + pixel_x) * 4;
                     const rgb: [3]u8 = nes_palette[self.palette[sprite_palette * 4 + color_val] & 0x3F];
