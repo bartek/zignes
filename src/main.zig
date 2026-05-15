@@ -11,10 +11,21 @@ const c = @cImport({
 });
 
 fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), nes: *NES) void {
+    const target_ms: u32 = 16; // ~60 fps (1000/60 ~= 16.67)
+    var frame_start: u32 = @intCast(c.SDL_GetTicks());
     while (!done.load(AtomicOrder.unordered)) {
-        const is_paused: bool = paused.load(AtomicOrder.unordered);
-        if (!is_paused) {
-            nes.tick();
+        if (paused.load(.unordered)) {
+            c.SDL_Delay(1);
+            continue;
+        }
+
+        const frame_done = nes.tick();
+        if (frame_done) {
+            const elapsed: u32 = @as(u32, @intCast(c.SDL_GetTicks())) - frame_start;
+            if (elapsed < target_ms) {
+                c.SDL_Delay(target_ms - elapsed);
+            }
+            frame_start = @intCast(c.SDL_GetTicks());
         }
     }
 }

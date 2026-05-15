@@ -59,7 +59,8 @@ pub const NES = struct {
         };
     }
 
-    pub fn tick(self: *NES) void {
+    // tick returns true when NMI just fired (vblank reached)
+    pub fn tick(self: *NES) bool {
         _ = self.cpu.tick();
 
         // CPU runs at 1/3 speed of PPU, so tick PPU 3x for every CPU tick
@@ -71,7 +72,9 @@ pub const NES = struct {
         if (self.ppu.nmi_triggered) {
             self.cpu.interrupt = .nmi;
             self.ppu.nmi_triggered = false;
+            return true; // frame complete
         }
+        return false;
     }
 
     pub fn deinit(self: *NES) void {
