@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 
 const NES = @import("nes.zig").NES;
 const Screen = @import("screen.zig").Screen;
+const Button = @import("controller.zig").Button;
 const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
@@ -45,6 +46,14 @@ pub fn main() !void {
                     if (key == c.SDLK_SPACE) {
                         const current = paused.load(AtomicOrder.unordered);
                         paused.store(!current, AtomicOrder.monotonic);
+                    } else if (mapKey(key)) |button| {
+                        nes.controller.setButton(button, true);
+                    }
+                },
+                c.SDL_KEYUP => {
+                    const key = event.key.keysym.sym;
+                    if (mapKey(key)) |button| {
+                        nes.controller.setButton(button, false);
                     }
                 },
                 else => {},
@@ -59,4 +68,18 @@ pub fn main() !void {
     thread_nes.join();
 
     // Block until thread_nes is done.
+}
+
+fn mapKey(key: c_int) ?Button {
+    return switch (key) {
+        c.SDLK_z => .B,
+        c.SDLK_x => .A,
+        c.SDLK_RETURN => .Start,
+        c.SDLK_RSHIFT => .Select,
+        c.SDLK_UP => .Up,
+        c.SDLK_DOWN => .Down,
+        c.SDLK_LEFT => .Left,
+        c.SDLK_RIGHT => .Right,
+        else => null,
+    };
 }
