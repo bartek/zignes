@@ -28,4 +28,25 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run_exe.addArgs(args);
     const run_step = b.step("run", "Run the application");
     run_step.dependOn(&run_exe.step);
+
+    // WASM build: pure emulator core, no SDL, freestanding.
+    const wasm_target = b.resolveTargetQuery(.{
+        .cpu_arch = .wasm32,
+        .os_tag = .freestanding,
+    });
+    const wasm = b.addExecutable(.{
+        .name = "zignes",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/wasm.zig"),
+            .target = wasm_target,
+            .optimize = .ReleaseSmall,
+        }),
+    });
+    wasm.entry = .disabled;
+    wasm.rdynamic = true;
+    const wasm_install = b.addInstallArtifact(wasm, .{
+        .dest_dir = .{ .override = .{ .custom = "wasm" } },
+    });
+    const wasm_step = b.step("wasm", "Build the WASM module");
+    wasm_step.dependOn(&wasm_install.step);
 }
