@@ -20,7 +20,16 @@ pub const NES = struct {
     pub fn loadROMFromFile(allocator: Allocator, file_path: [*:0]const u8) !NES {
         const cart = try allocator.create(Cartridge);
         cart.* = try Cartridge.loadFromFile(allocator, file_path);
+        return initFromCartridge(allocator, cart);
+    }
 
+    pub fn load(allocator: Allocator, bytes: []const u8) !NES {
+        const cart = try allocator.create(Cartridge);
+        cart.* = try Cartridge.load(allocator, bytes);
+        return initFromCartridge(allocator, cart);
+    }
+
+    fn initFromCartridge(allocator: Allocator, cart: *Cartridge) !NES {
         const cpu = try allocator.create(CPU);
         const ppu = try allocator.create(PPU);
         ppu.* = .{};
