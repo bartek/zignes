@@ -31,7 +31,16 @@ fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), nes: *NES)
 }
 
 pub fn main() !void {
-    var nes = try NES.loadROMFromFile(std.heap.page_allocator, "roms/donkeykong.nes");
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const args = try std.process.argsAlloc(arena.allocator());
+    const rom_path = if (args.len >= 2) args[1] else {
+        std.debug.print("usage: {s} <rom.nes>\n", .{args[0]});
+        return error.MissingRomPath;
+    };
+
+    var nes = try NES.loadROMFromFile(arena.allocator(), rom_path);
     defer nes.deinit();
 
     var screen = try Screen.init();

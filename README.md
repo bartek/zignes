@@ -1,4 +1,4 @@
-## Building and testing
+# zignes
 
 zig build run -- <path-to-rom>
 
