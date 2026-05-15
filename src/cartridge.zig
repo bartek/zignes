@@ -100,33 +100,30 @@ pub const Cartridge = struct {
     pub fn loadFromFile(allocator: Allocator, path: [*:0]const u8) !Cartridge {
         var file = try std.fs.cwd().openFileZ(path, .{});
         defer file.close();
+        const bytes = try file.readToEndAlloc(allocator, 16 * 1024 * 1024); // cap at 16MB
+        defer allocator.free(bytes);
+        return load(allocator, bytes);
+    }
 
-        var buf = [_]u8{0} ** @sizeOf(Header);
-        const bytes_read = try file.read(&buf);
-        assert(bytes_read == @sizeOf(Header));
+    pub fn load(allocator: Allocator, bytes: []const u8) !Cartridge {
+        if (bytes.len < @sizeOf(Header)) return error.RomTooSmall;
 
-        const header: Header = @bitCast(buf);
-        assert(header.isValid());
+        const header: Header = @bitCast(bytes[0..@sizeOf(Header)].*);
+        if (!header.isValid()) return error.InvalidHeader;
 
-        // Skip trainer if present (512 bytes at $7000-$71FF)
-        if (header.flags_6.has_trainer) {
-            var trainer_buf: [512]u8 = undefined;
-            const trainer_read = try file.read(&trainer_buf);
-            assert(trainer_read == 512);
-        }
+        var offset: usize = @sizeOf(Header);
+        if (header.flags_6.has_trainer) offset += 512;
 
-        // Load PRG ROM (16 KB units)
         const prg_rom_size = @as(usize, header.prg_rom_size) * 16 * 1024;
-        const prg_rom_buf = try allocator.alloc(u8, prg_rom_size);
-        const prg_read = try file.read(prg_rom_buf);
-        assert(prg_read == prg_rom_size);
-
-        // Load CHR ROM (8 KB units)
         const chr_rom_size = @as(usize, header.chr_rom_size) * 8 * 1024;
-        const chr_rom_buf = try allocator.alloc(u8, chr_rom_size);
-        const chr_read = try file.read(chr_rom_buf);
-        assert(chr_read == chr_rom_size);
+        if (bytes.len < offset + prg_rom_size + chr_rom_size) return error.RomTruncated;
 
+        const prg_rom_buf = try allocator.alloc(u8, prg_rom_size);
+        @memcpy(prg_rom_buf, bytes[offset..][0..prg_rom_size]);
+        offset += prg_rom_size;
+
+        const chr_rom_buf = try allocator.alloc(u8, chr_rom_size);
+        @memcpy(chr_rom_buf, bytes[offset..][0..chr_rom_size]);
         return .{
             .allocator = allocator,
             .header = header,
