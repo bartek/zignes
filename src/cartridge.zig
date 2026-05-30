@@ -96,7 +96,7 @@ pub const Header = extern struct {
 pub const Cartridge = struct {
     header: Header,
     prg_rom: []const u8,
-    chr_rom: []const u8,
+    chr_rom: []u8,
     mapper: Mapper,
     allocator: Allocator,
 
@@ -118,15 +118,36 @@ pub const Cartridge = struct {
         if (header.flags_6.has_trainer) offset += 512;
 
         const prg_rom_size = @as(usize, header.prg_rom_size) * 16 * 1024;
+
         const chr_rom_size = @as(usize, header.chr_rom_size) * 8 * 1024;
-        if (bytes.len < offset + prg_rom_size + chr_rom_size) return error.RomTruncated;
+        const uses_chr_ram = chr_rom_size == 0;
+        const chr_alloc_size: usize = if (uses_chr_ram) 8 * 1024 else chr_rom_size;
+
+        // UxROM (and possibly other mappers not yet implementd) store chr_rom_size = 0 in
+        // the iNES header, meaning: the cartridge has 8 KB of writable CHR-RAM, no CHR
+        // data shipped.
+        if (!uses_chr_ram and bytes.len < offset + prg_rom_size + chr_rom_size) {
+            return error.RomTruncated;
+        }
 
         const prg_rom_buf = try allocator.alloc(u8, prg_rom_size);
         @memcpy(prg_rom_buf, bytes[offset..][0..prg_rom_size]);
         offset += prg_rom_size;
 
-        const chr_rom_buf = try allocator.alloc(u8, chr_rom_size);
-        @memcpy(chr_rom_buf, bytes[offset..][0..chr_rom_size]);
+        const chr_buf = try allocator.alloc(u8, chr_alloc_size);
+
+        // When uses_chr_ram is false, means the iNES file contains graphics data
+        // (typically 8KB or more of a pattern table). When false, we copy the bytes from
+        // the file slice and put them into our owned chr_buf.
+        //
+        // When uses_chr_ram is true, it means the iNES file contains zero bytes of
+        // graphics data. There's nothing to copy, so we fill the buffer with zero to
+        // clean any random bytes the allocator may have placed on alloc.
+        if (uses_chr_ram) {
+            @memset(chr_buf, 0);
+        } else {
+            @memcpy(chr_buf, bytes[offset..][0..chr_rom_size]);
+        }
 
         // Mapper number is split across two header bytes. Both are low nibbles (015),
         // shift the high left by 4 so they occupy the upper byte half.
@@ -138,7 +159,7 @@ pub const Cartridge = struct {
             .allocator = allocator,
             .header = header,
             .prg_rom = prg_rom_buf,
-            .chr_rom = chr_rom_buf,
+            .chr_rom = chr_buf,
             .mapper = try Mapper.init(mapper_num),
         };
     }
@@ -151,7 +172,7 @@ pub const Cartridge = struct {
 
     pub fn cpuWrite(self: *Cartridge, addr: u16, val: u8) void {
         switch (self.mapper) {
-            inline else => |m| m.cpuWrite(self, addr, val),
+            inline else => |*m| m.cpuWrite(self, addr, val),
         }
     }
 
