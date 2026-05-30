@@ -2,6 +2,8 @@ const std = @import("std");
 
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const Mapper = @import("mappers.zig").Mapper;
+const Mirroring = @import("mappers.zig").Mirroring;
 
 // 76543210
 // ||||||||
@@ -95,6 +97,7 @@ pub const Cartridge = struct {
     header: Header,
     prg_rom: []const u8,
     chr_rom: []const u8,
+    mapper: Mapper,
     allocator: Allocator,
 
     pub fn loadFromFile(allocator: Allocator, path: [*:0]const u8) !Cartridge {
@@ -124,12 +127,47 @@ pub const Cartridge = struct {
 
         const chr_rom_buf = try allocator.alloc(u8, chr_rom_size);
         @memcpy(chr_rom_buf, bytes[offset..][0..chr_rom_size]);
+
+        // Mapper number is split across two header bytes. Both are low nibbles (015),
+        // shift the high left by 4 so they occupy the upper byte half.
+        const mapper_num: u8 =
+            (@as(u8, header.flags_7.upper_mapper_nibble) << 4) |
+            @as(u8, header.flags_6.lower_mapper_nibble);
+
         return .{
             .allocator = allocator,
             .header = header,
             .prg_rom = prg_rom_buf,
             .chr_rom = chr_rom_buf,
+            .mapper = try Mapper.init(mapper_num),
         };
+    }
+
+    pub fn cpuRead(self: *const Cartridge, addr: u16) u8 {
+        return switch (self.mapper) {
+            inline else => |m| m.cpuRead(self, addr),
+        };
+    }
+
+    pub fn cpuWrite(self: *Cartridge, addr: u16, val: u8) void {
+        switch (self.mapper) {
+            inline else => |m| m.cpuWrite(self, addr, val),
+        }
+    }
+
+    pub fn chrRead(self: *const Cartridge, addr: u13) u8 {
+        return switch (self.mapper) {
+            inline else => |m| m.chrRead(self, addr),
+        };
+    }
+    pub fn chrWrite(self: *Cartridge, addr: u13, val: u8) void {
+        switch (self.mapper) {
+            inline else => |*m| m.chrWrite(self, addr, val),
+        }
+    }
+
+    pub fn mirroring(self: *const Cartridge) Mirroring {
+        return if (self.header.flags_6.mirroring_is_vertical) .vertical else .horizontal;
     }
 
     pub fn deinit(self: *Cartridge) void {

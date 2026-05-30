@@ -93,7 +93,7 @@ pub const PPU = struct {
     oam_addr: u8 = 0, // $2003 write
     data_buffer: u8 = 0, // Used for delayed reads from VRAM
 
-    cart: ?*const Cartridge = null,
+    cart: *const Cartridge,
 
     // Tracking background CHR pattern bits
     bg_opaque: [256 * 240]bool = [_]bool{false} ** (256 * 240),
@@ -108,7 +108,7 @@ pub const PPU = struct {
         return switch (mapped) {
             // Pattern tables, chr-rom from the cartridge
             0x0000...0x1fff => {
-                if (self.cart) |c| return c.chr_rom[mapped] else return 0;
+                return self.cart.chrRead(@intCast(mapped));
             },
             0x2000...0x3eff => {
                 return self.vram[self.mirrorVramAddr(mapped)];
@@ -140,7 +140,7 @@ pub const PPU = struct {
 
     fn mirrorVramAddr(self: *const PPU, addr: u16) u16 {
         const mirrored = addr & 0x0FFF;
-        const is_vertical = if (self.cart) |c| c.header.flags_6.mirroring_is_vertical else false;
+        const is_vertical = self.cart.mirroring() == .vertical;
 
         if (is_vertical) {
             return mirrored & 0x07FF;
@@ -275,9 +275,7 @@ pub const PPU = struct {
     // Render PPU framebuffer to pixel data
     // Returns a buffer of (256 * 240 * 4) bytes in RGBA format
     pub fn render(self: *PPU, buffer: []u8) void {
-        const cart = self.cart orelse return;
-        const chr = cart.chr_rom;
-        if (chr.len == 0) return;
+        if (self.cart.chr_rom.len == 0) return;
 
         self.renderBackground(buffer);
         self.renderSprites(buffer);
@@ -298,9 +296,7 @@ pub const PPU = struct {
     fn renderBackground(self: *PPU, buffer: []u8) void {
         @memset(buffer, 0);
 
-        const cart = self.cart orelse return;
-        const chr = cart.chr_rom;
-        if (chr.len == 0) return;
+        if (self.cart.chr_rom.len == 0) return;
 
         var v = self.v; // local snapshot to not stomp on emulation thread
 
@@ -341,8 +337,8 @@ pub const PPU = struct {
 
                 // fine_y picks the row within the tile
                 const row = @as(u16, v.fine_y);
-                const low_byte = chr[pattern_addr + row];
-                const high_byte = chr[pattern_addr + row + 8];
+                const low_byte = self.cart.chrRead(@intCast(pattern_addr + row));
+                const high_byte = self.cart.chrRead(@intCast(pattern_addr + row + 8));
 
                 for (0..8) |col| {
                     const shift: u3 = @intCast(7 - col);
@@ -375,9 +371,7 @@ pub const PPU = struct {
     }
 
     fn renderSprites(self: *PPU, buffer: []u8) void {
-        const cart = self.cart orelse return;
-        const chr = cart.chr_rom;
-        if (chr.len == 0) return;
+        if (self.cart.chr_rom.len == 0) return;
 
         // PPUCTRL has the bit which selects which pattern table to use. Pattern table 0
         // begins at $0000, table 1 at $1000. Multiplication via 0x1000 converts the 0 / 1
@@ -410,8 +404,8 @@ pub const PPU = struct {
                 // Same as background: Each row of a tile is two bytes, lo/hi bitplane
                 // seperated by 8 bytes
                 const actual_row = if (flip_v) 7 - row else row;
-                const low_byte = chr[pattern_addr + actual_row];
-                const high_byte = chr[pattern_addr + actual_row + 8];
+                const low_byte = self.cart.chrRead(@intCast(pattern_addr + actual_row));
+                const high_byte = self.cart.chrRead(@intCast(pattern_addr + actual_row + 8));
 
                 for (0..8) |col| {
                     const pixel_x = x + col;

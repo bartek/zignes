@@ -80,12 +80,7 @@ pub const NESBus = struct {
             0x4020...0x5FFF => 0, // TODO: Cartridge expansion ROM
             0x6000...0x7FFF => 0, // TODO: SRAM (battery-backed)
             0x8000...0xFFFF => {
-                // PRG ROM mapping (mapper 0 NROM)
-                // For NROM: if PRG is 16KB (1 bank), mirror it to both 0x8000 and 0xC000
-                // if PRG is 32KB (2 banks), map them sequentially
-                const prg_addr = addr - 0x8000;
-                const prg_size = self.cart.prg_rom.len;
-                return self.cart.prg_rom[prg_addr % prg_size];
+                return self.cart.cpuRead(addr);
             },
         };
     }
@@ -112,7 +107,7 @@ pub const NESBus = struct {
             0x4017...0x401F => {}, // TODO: APU & I/O cont.
             0x4020...0x5FFF => {}, // TODO: Cartridge expansion ROM
             0x6000...0x7FFF => {}, // TODO: SRAM (battery-backed)
-            0x8000...0xFFFF => {}, // PRG ROM is read-only
+            0x8000...0xFFFF => self.cart.cpuWrite(addr, data),
         }
     }
 };

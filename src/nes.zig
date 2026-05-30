@@ -32,7 +32,6 @@ pub const NES = struct {
     fn initFromCartridge(allocator: Allocator, cart: *Cartridge) !NES {
         const cpu = try allocator.create(CPU);
         const ppu = try allocator.create(PPU);
-        ppu.* = .{};
         const controller = try allocator.create(Controller);
         controller.* = .{};
 
