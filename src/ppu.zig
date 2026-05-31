@@ -93,7 +93,7 @@ pub const PPU = struct {
     oam_addr: u8 = 0, // $2003 write
     data_buffer: u8 = 0, // Used for delayed reads from VRAM
 
-    cart: *const Cartridge,
+    cart: *Cartridge,
 
     // Tracking background CHR pattern bits
     bg_opaque: [256 * 240]bool = [_]bool{false} ** (256 * 240),
@@ -125,7 +125,7 @@ pub const PPU = struct {
     fn ppuWrite(self: *PPU, addr: u16, val: u8) void {
         const mapped = addr & 0x3fff;
         switch (mapped) {
-            0x0000...0x1fff => return, // Usually read-only CHR-ROM
+            0x0000...0x1fff => self.cart.chrWrite(@intCast(mapped), val),
             0x2000...0x3eff => {
                 self.vram[self.mirrorVramAddr(mapped)] = val;
             },
