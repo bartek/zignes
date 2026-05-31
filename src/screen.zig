@@ -54,7 +54,7 @@ pub const Screen = struct {
 
         const texture = c.SDL_CreateTexture(
             renderer,
-            c.SDL_PIXELFORMAT_RGB888,
+            c.SDL_PIXELFORMAT_ABGR8888,
             c.SDL_TEXTUREACCESS_STREAMING,
             256,
             240,
