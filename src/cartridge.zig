@@ -50,7 +50,7 @@ pub const Header = extern struct {
 
     // The format of the header is as follows:
     // Bytes 0-3, Constant $4E $45 $53 $1A (ASCII "NES" followed by MS-DOS end-of-file)
-    pub const Magic = packed struct {
+    pub const Magic = packed struct(u32) {
         N: u8 = 0,
         E: u8 = 0,
         S: u8 = 0,
@@ -100,10 +100,8 @@ pub const Cartridge = struct {
     mapper: Mapper,
     allocator: Allocator,
 
-    pub fn loadFromFile(allocator: Allocator, path: [*:0]const u8) !Cartridge {
-        var file = try std.fs.cwd().openFileZ(path, .{});
-        defer file.close();
-        const bytes = try file.readToEndAlloc(allocator, 16 * 1024 * 1024); // cap at 16MB
+    pub fn loadFromFile(allocator: Allocator, io: std.Io, path: []const u8) !Cartridge {
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(16 * 1024 * 1024));
         defer allocator.free(bytes);
         return load(allocator, bytes);
     }

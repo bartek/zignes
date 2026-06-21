@@ -7,6 +7,9 @@ const NES = @import("nes.zig").NES;
 const Screen = @import("screen.zig").Screen;
 const Button = @import("controller.zig").Button;
 const c = @cImport({
+    // SDL_cpuinfo.h pulls in arm_neon.h, which zig 0.16's translate-c
+    // can't parse (missing __mfp8 builtin). Disable until upstream fixes it.
+    @cDefine("SDL_DISABLE_ARM_NEON_H", "1");
     @cInclude("SDL2/SDL.h");
 });
 
@@ -30,17 +33,15 @@ fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), nes: *NES)
     }
 }
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-
-    const args = try std.process.argsAlloc(arena.allocator());
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.arena.allocator();
+    const args = try init.minimal.args.toSlice(allocator);
     const rom_path = if (args.len >= 2) args[1] else {
         std.debug.print("usage: {s} <rom.nes>\n", .{args[0]});
         return error.MissingRomPath;
     };
 
-    var nes = try NES.loadROMFromFile(arena.allocator(), rom_path);
+    var nes = try NES.loadROMFromFile(allocator, init.io, rom_path);
     defer nes.deinit();
 
     var screen = try Screen.init();

@@ -6,19 +6,19 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const exe_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe_mod.linkSystemLibrary("SDL2", .{});
+    exe_mod.linkSystemLibrary("SDL2_ttf", .{});
+    exe_mod.link_libc = true;
+
     const exe = b.addExecutable(.{
         .name = "zignes",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_module = exe_mod,
     });
-
-    // Link SDL2 and SDL2_ttf
-    exe.linkSystemLibrary("SDL2");
-    exe.linkSystemLibrary("SDL2_ttf");
-    exe.linkLibC();
 
     // Install the executable to zig-out/bin by default (user chooses prefix).
     b.installArtifact(exe);

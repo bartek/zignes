@@ -17,9 +17,9 @@ pub const NES = struct {
     controller: *Controller,
     bus: *Bus,
 
-    pub fn loadROMFromFile(allocator: Allocator, file_path: [*:0]const u8) !NES {
+    pub fn loadROMFromFile(allocator: Allocator, io: std.Io, file_path: []const u8) !NES {
         const cart = try allocator.create(Cartridge);
-        cart.* = try Cartridge.loadFromFile(allocator, file_path);
+        cart.* = try Cartridge.loadFromFile(allocator, io, file_path);
         return initFromCartridge(allocator, cart);
     }
 

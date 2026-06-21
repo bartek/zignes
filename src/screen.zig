@@ -1,5 +1,6 @@
 const std = @import("std");
 const c = @cImport({
+    @cDefine("SDL_DISABLE_ARM_NEON_H", "1");
     @cInclude("SDL2/SDL.h");
     @cInclude("SDL2/SDL_ttf.h");
 });
@@ -136,27 +137,25 @@ pub const Screen = struct {
         var buf = try std.ArrayList(u8).initCapacity(allocator, 4096);
         defer buf.deinit(allocator);
 
-        const writer = buf.writer(allocator);
-
         // CPU State Header
-        try writer.print("=== CPU STATE ===\n", .{});
-        try writer.print("PC: {X:0>4}  A: {X:0>2}  X: {X:0>2}  Y: {X:0>2}\n", .{ cpu.PC, cpu.A, cpu.X, cpu.Y });
-        try writer.print("SP: {X:0>2}  P: {X:0>2}  Cycles: {}\n", .{ cpu.SP, cpu.P, cpu.Cycles });
-        try writer.print("\n", .{});
+        try buf.print(allocator, "=== CPU STATE ===\n", .{});
+        try buf.print(allocator,"PC: {X:0>4}  A: {X:0>2}  X: {X:0>2}  Y: {X:0>2}\n", .{ cpu.PC, cpu.A, cpu.X, cpu.Y });
+        try buf.print(allocator,"SP: {X:0>2}  P: {X:0>2}  Cycles: {}\n", .{ cpu.SP, cpu.P, cpu.Cycles });
+        try buf.print(allocator,"\n", .{});
 
         // Flags
-        try writer.print("Flags: ", .{});
-        if ((cpu.P & 0x80) != 0) try writer.print("N", .{});
-        if ((cpu.P & 0x40) != 0) try writer.print("V", .{});
-        try writer.print("-", .{});
-        if ((cpu.P & 0x10) != 0) try writer.print("B", .{});
-        if ((cpu.P & 0x08) != 0) try writer.print("D", .{});
-        if ((cpu.P & 0x04) != 0) try writer.print("I", .{});
-        if ((cpu.P & 0x02) != 0) try writer.print("Z", .{});
-        if ((cpu.P & 0x01) != 0) try writer.print("C", .{});
-        try writer.print("\n", .{});
+        try buf.print(allocator,"Flags: ", .{});
+        if ((cpu.P & 0x80) != 0) try buf.print(allocator,"N", .{});
+        if ((cpu.P & 0x40) != 0) try buf.print(allocator,"V", .{});
+        try buf.print(allocator,"-", .{});
+        if ((cpu.P & 0x10) != 0) try buf.print(allocator,"B", .{});
+        if ((cpu.P & 0x08) != 0) try buf.print(allocator,"D", .{});
+        if ((cpu.P & 0x04) != 0) try buf.print(allocator,"I", .{});
+        if ((cpu.P & 0x02) != 0) try buf.print(allocator,"Z", .{});
+        if ((cpu.P & 0x01) != 0) try buf.print(allocator,"C", .{});
+        try buf.print(allocator,"\n", .{});
 
-        try writer.print("\n=== MEMORY DUMP ===\n", .{});
+        try buf.print(allocator,"\n=== MEMORY DUMP ===\n", .{});
 
         // Render hex dump of first 2KB of RAM
         const mem_size: u16 = 0x800;
@@ -164,37 +163,37 @@ pub const Screen = struct {
 
         while (addr < mem_size) : (addr += 16) {
             // Address
-            try writer.print("{X:0>4}:  ", .{addr});
+            try buf.print(allocator,"{X:0>4}:  ", .{addr});
 
             // Hex bytes
             var i: u16 = 0;
             while (i < 16 and addr + i < mem_size) : (i += 1) {
                 const byte = bus.read(addr + i);
-                try writer.print("{X:0>2} ", .{byte});
+                try buf.print(allocator,"{X:0>2} ", .{byte});
             }
 
             // Padding for partial lines
             if (i < 16) {
                 var j = i;
                 while (j < 16) : (j += 1) {
-                    try writer.print("   ", .{});
+                    try buf.print(allocator,"   ", .{});
                 }
             }
 
-            try writer.print("  |", .{});
+            try buf.print(allocator,"  |", .{});
 
             // ASCII representation
             i = 0;
             while (i < 16 and addr + i < mem_size) : (i += 1) {
                 const byte = bus.read(addr + i);
                 if (byte >= 32 and byte < 127) {
-                    try writer.print("{c}", .{byte});
+                    try buf.print(allocator,"{c}", .{byte});
                 } else {
-                    try writer.print(".", .{});
+                    try buf.print(allocator,".", .{});
                 }
             }
 
-            try writer.print("|\n", .{});
+            try buf.print(allocator,"|\n", .{});
         }
 
         // Render text line by line on right side (starting at x=512)
