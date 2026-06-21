@@ -1,11 +1,12 @@
 const std = @import("std");
 
-const Cartridge = @import("cartridge.zig").Cartridge;
-const NESBus = @import("bus.zig").NESBus;
-const CPU = @import("cpu.zig").CPU;
-const PPU = @import("ppu.zig").PPU;
-const Controller = @import("controller.zig").Controller;
+const APU = @import("apu.zig").APU;
 const Bus = @import("bus.zig").Bus;
+const CPU = @import("cpu.zig").CPU;
+const Cartridge = @import("cartridge.zig").Cartridge;
+const Controller = @import("controller.zig").Controller;
+const NESBus = @import("bus.zig").NESBus;
+const PPU = @import("ppu.zig").PPU;
 
 const Allocator = std.mem.Allocator;
 
@@ -14,6 +15,7 @@ pub const NES = struct {
     cart: *Cartridge,
     cpu: *CPU,
     ppu: *PPU,
+    apu: *APU,
     controller: *Controller,
     bus: *Bus,
 
@@ -32,6 +34,7 @@ pub const NES = struct {
     fn initFromCartridge(allocator: Allocator, cart: *Cartridge) !NES {
         const cpu = try allocator.create(CPU);
         const ppu = try allocator.create(PPU);
+        const apu = try allocator.create(APU);
         const controller = try allocator.create(Controller);
         controller.* = .{};
 
@@ -49,6 +52,8 @@ pub const NES = struct {
         cpu.* = CPU.init(allocator, bus);
         ppu.* = PPU{ .cart = cart };
 
+        apu.* = APU.init(allocator);
+
         // Read reset vector to set CPU entry point.
         // The iNES header (parsed in cartridge.zig) tells us the PRG-ROM and CHR-ROM
         // sizes. PRG-ROM is mapped into CPU address space, so we can read the reset
@@ -61,6 +66,7 @@ pub const NES = struct {
             .allocator = allocator,
             .cart = cart,
             .cpu = cpu,
+            .apu = apu,
             .ppu = ppu,
             .controller = controller,
             .bus = bus,
@@ -70,6 +76,9 @@ pub const NES = struct {
     // tick returns true when NMI just fired (vblank reached)
     pub fn tick(self: *NES) bool {
         _ = self.cpu.tick();
+
+        // TODO: apu tick the same as CPU?
+        self.apu.tick();
 
         // CPU runs at 1/3 speed of PPU, so tick PPU 3x for every CPU tick
         self.ppu.tick();
