@@ -11,66 +11,39 @@ const PPU = @import("ppu.zig").PPU;
 const Allocator = std.mem.Allocator;
 
 pub const NES = struct {
-    allocator: Allocator,
-    cart: *Cartridge,
-    cpu: *CPU,
-    ppu: *PPU,
-    apu: *APU,
-    controller: *Controller,
-    bus: *Bus,
+    cart: Cartridge,
+    cpu: CPU,
+    ppu: PPU,
+    apu: APU = .{},
+    controller: Controller = .{},
+    bus: Bus,
+    ram: [0x800]u8 = .{0} ** 0x800,
 
-    pub fn loadROMFromFile(allocator: Allocator, io: std.Io, file_path: []const u8) !NES {
-        const cart = try allocator.create(Cartridge);
-        cart.* = try Cartridge.loadFromFile(allocator, io, file_path);
-        return initFromCartridge(allocator, cart);
+    pub fn loadROMFromFile(self: *NES, allocator: Allocator, io: std.Io, file_path: []const u8) !void {
+        self.cart = try Cartridge.loadFromFile(allocator, io, file_path);
+        self.initAfterCart();
     }
 
-    pub fn load(allocator: Allocator, bytes: []const u8) !NES {
-        const cart = try allocator.create(Cartridge);
-        cart.* = try Cartridge.load(allocator, bytes);
-        return initFromCartridge(allocator, cart);
+    pub fn load(self: *NES, allocator: Allocator, bytes: []const u8) !void {
+        self.cart = try Cartridge.load(allocator, bytes);
+        self.initAfterCart();
     }
 
-    fn initFromCartridge(allocator: Allocator, cart: *Cartridge) !NES {
-        const cpu = try allocator.create(CPU);
-        const ppu = try allocator.create(PPU);
-        const apu = try allocator.create(APU);
-        const controller = try allocator.create(Controller);
-        controller.* = .{};
-
-        const ram = try allocator.alloc(u8, 0x800);
-        const nesBus = NESBus.init(
-            ram,
-            ppu,
-            controller,
-            cart,
-        );
-
-        const bus = try allocator.create(Bus);
-        bus.* = Bus{ .nesBus = nesBus };
-
-        cpu.* = CPU.init(allocator, bus);
-        ppu.* = PPU{ .cart = cart };
-
-        apu.* = APU.init(allocator);
+    fn initAfterCart(self: *NES) void {
+        self.ram = .{0} ** 0x800;
+        self.apu = .{};
+        self.controller = .{};
+        self.ppu = .{ .cart = &self.cart };
+        self.bus = .{ .nesBus = NESBus.init(&self.ram, &self.ppu, &self.controller, &self.cart) };
+        self.cpu = CPU.init(&self.bus);
 
         // Read reset vector to set CPU entry point.
         // The iNES header (parsed in cartridge.zig) tells us the PRG-ROM and CHR-ROM
         // sizes. PRG-ROM is mapped into CPU address space, so we can read the reset
         // vector at $FFFC-$FFFD to find where execution begins.
-        const lo: u16 = bus.read(0xFFFC);
-        const hi: u16 = bus.read(0xFFFD);
-        cpu.PC = (hi << 8) | lo;
-
-        return .{
-            .allocator = allocator,
-            .cart = cart,
-            .cpu = cpu,
-            .apu = apu,
-            .ppu = ppu,
-            .controller = controller,
-            .bus = bus,
-        };
+        const lo: u16 = self.bus.read(0xFFFC);
+        const hi: u16 = self.bus.read(0xFFFD);
+        self.cpu.PC = (hi << 8) | lo;
     }
 
     // tick returns true when NMI just fired (vblank reached)
@@ -96,10 +69,5 @@ pub const NES = struct {
 
     pub fn deinit(self: *NES) void {
         self.cart.deinit();
-        self.allocator.destroy(self.cart);
-        self.allocator.destroy(self.cpu);
-        self.allocator.destroy(self.ppu);
-        self.allocator.destroy(self.controller);
-        self.allocator.destroy(self.bus);
     }
 };

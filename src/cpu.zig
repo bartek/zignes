@@ -41,14 +41,10 @@ pub const CPU = struct {
 
     interrupt: Interrupt = .none,
 
-    allocator: Allocator,
     Bus: *Bus,
 
-    pub fn init(allocator: Allocator, bus: *Bus) CPU {
-        return CPU{
-            .allocator = allocator,
-            .Bus = bus,
-        };
+    pub fn init(bus: *Bus) CPU {
+        return CPU{ .Bus = bus };
     }
 
     // tick ticks the CPU and returns true if halted
@@ -100,7 +96,7 @@ pub const CPU = struct {
         return self.Halt > 0;
     }
 
-    fn runFromState(self: *CPU, initial_state: *const CPUState) !CPUState {
+    fn runFromState(self: *CPU, allocator: Allocator, initial_state: *const CPUState) !CPUState {
         self.PC = initial_state.pc;
         self.SP = initial_state.s;
         self.A = initial_state.a;
@@ -116,7 +112,7 @@ pub const CPU = struct {
         const instruction = instructions.decodeInstruction(self.fetchOpcode(), 0);
         self.exec(instruction);
 
-        var final_ram = try self.allocator.alloc(struct { u16, u8 }, initial_state.ram.len);
+        var final_ram = try allocator.alloc(struct { u16, u8 }, initial_state.ram.len);
         for (0..initial_state.ram.len) |i| {
             const entry = &initial_state.ram[i];
             const addr = entry[0];
@@ -651,9 +647,9 @@ fn runTestCase(test_case: *const InstrTest) !void {
     const ram = try allocator.alloc(u8, 0x10000);
     const testBus = CPUTestBus{ .mem = ram };
     var bus = Bus{ .cpuTestBus = testBus };
-    var cpu = CPU.init(T.allocator, &bus);
+    var cpu = CPU.init(&bus);
 
-    const received = try cpu.runFromState(&test_case.initial);
+    const received = try cpu.runFromState(T.allocator, &test_case.initial);
     defer T.allocator.free(received.ram);
     const expected = &test_case.final;
     try T.expectEqual(expected.pc, received.pc);

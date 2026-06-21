@@ -97,10 +97,10 @@ pub const Screen = struct {
         _ = c.SDL_RenderClear(self.renderer);
 
         // Render PPU game area (left side)
-        try self.renderGameArea(nes.ppu);
+        try self.renderGameArea(&nes.ppu);
 
         // Render debug info (right side)
-        try self.renderDebugArea(nes.bus, nes.cpu);
+        try self.renderDebugArea(&nes.bus, &nes.cpu);
 
         c.SDL_RenderPresent(self.renderer);
     }

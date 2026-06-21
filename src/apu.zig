@@ -1,15 +1,7 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 
 pub const APU = struct {
     irq_pending: bool = false,
-    allocator: Allocator,
-
-    pub fn init(allocator: Allocator) APU {
-        return APU{
-            .allocator = allocator,
-        };
-    }
 
     pub fn writeRegister(self: *APU, addr: u16, val: u8) void {
         _ = self;

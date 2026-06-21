@@ -41,7 +41,8 @@ pub fn main(init: std.process.Init) !void {
         return error.MissingRomPath;
     };
 
-    var nes = try NES.loadROMFromFile(allocator, init.io, rom_path);
+    var nes: NES = undefined;
+    try nes.loadROMFromFile(allocator, init.io, rom_path);
     defer nes.deinit();
 
     var screen = try Screen.init();

@@ -22,7 +22,7 @@ export fn alloc(len: usize) [*]u8 {
 }
 
 export fn init(rom_ptr: [*]const u8, rom_len: usize) bool {
-    nes_storage = NES.load(fba.allocator(), rom_ptr[0..rom_len]) catch return false;
+    nes_storage.load(fba.allocator(), rom_ptr[0..rom_len]) catch return false;
     return true;
 }
 
