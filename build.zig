@@ -11,7 +11,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe_mod.linkSystemLibrary("SDL2", .{});
     exe_mod.linkSystemLibrary("SDL2_ttf", .{});
     exe_mod.link_libc = true;
 
