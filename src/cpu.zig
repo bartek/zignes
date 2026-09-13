@@ -460,7 +460,6 @@ pub const CPU = struct {
                 // NOP: consume the operand (if any) but do nothing
                 if (instruction[1] != .Implied) _ = self.operator(instruction);
             },
-            Op.Undefined => unreachable,
         }
     }
 
@@ -550,7 +549,6 @@ pub const CPU = struct {
             },
             .Implicit => unreachable,
             .Implied => unreachable,
-            .Undefined => unreachable,
         }
     }
 

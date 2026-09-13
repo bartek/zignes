@@ -59,7 +59,6 @@ pub const Op = enum(u8) {
     TXA,
     TXS,
     TYA,
-    Undefined,
 };
 
 // ref: https://www.masswerk.at/6502/6502_instruction_set.html
@@ -106,16 +105,15 @@ pub const AddressMode = enum {
     ZeroPage,
     ZeroPageX,
     ZeroPageY,
-    Undefined,
 };
 
 // opcode, addressing mode, cycles
 pub const Instruction = struct { Op, AddressMode, u8 };
 
 // makeLookupTable creates the lookup table for all possible instructions.
-fn makeLookupTable() [256]Instruction {
+fn makeLookupTable() [256]?Instruction {
     comptime { // guarantee table will be evaluated at compile-time.
-        var instr_lookup_table: [256]Instruction = .{UndefinedInstruction} ** 256;
+        var instr_lookup_table: [256]?Instruction = .{null} ** 256;
 
         // AND
         instr_lookup_table[0x29] = .{ Op.AND, AddressMode.Immediate, 2 };
@@ -319,18 +317,14 @@ fn makeLookupTable() [256]Instruction {
     }
 }
 
-pub const UndefinedInstruction: Instruction = .{ Op.Undefined, AddressMode.Undefined, 0 };
 const lookup_table = makeLookupTable();
 
 pub fn decodeInstruction(opcode: u8, pc: u16) *const Instruction {
-    const instruction = &lookup_table[opcode];
-    if (instruction[0] == Op.Undefined) {
-        panic("Undefined opcode: 0x{x:0>2} at PC=0x{x:0>4}", .{ opcode, pc });
-    }
-    return instruction;
+    if (lookup_table[opcode]) |*instruction| return instruction;
+    panic("Undefined opcode: 0x{x:0>2} at PC=0x{x:0>4}", .{ opcode, pc });
 }
 
 comptime {
     std.debug.assert(lookup_table.len == 256);
-    std.debug.assert(lookup_table[0xa8][0] == Op.TAY);
+    std.debug.assert(lookup_table[0xa8].?[0] == Op.TAY);
 }
