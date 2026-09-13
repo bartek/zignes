@@ -643,9 +643,8 @@ fn parseCPUTestCase(allocator: Allocator, testcase_str: []const u8) !std.json.Pa
 // runTestCase runs a test case by provisioning a CPU, setting initial state, and
 // checking received state against expected.
 fn runTestCase(test_case: *const InstrTest) !void {
-    const allocator = std.heap.page_allocator;
-    const ram = try allocator.alloc(u8, 0x10000);
-    const testBus = CPUTestBus{ .mem = ram };
+    var ram: [0x10000]u8 = @splat(0);
+    const testBus = CPUTestBus{ .mem = &ram };
     var bus = Bus{ .cpuTestBus = testBus };
     var cpu = CPU.init(&bus);
 
@@ -682,7 +681,7 @@ fn runTestsForInstruction(hex: []const u8) !void {
     );
     defer T.allocator.free(file_path);
 
-    const contents = try std.fs.cwd().readFileAlloc(T.allocator, file_path, std.math.maxInt(usize));
+    const contents = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, file_path, T.allocator, .limited(16 * 1024 * 1024));
     defer T.allocator.free(contents);
 
     var parsed = try parseCPUTestCase(T.allocator, contents);

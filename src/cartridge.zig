@@ -198,6 +198,6 @@ pub const Cartridge = struct {
 const T = std.testing;
 
 test "Cartridge load and verify header" {
-    var cart = try Cartridge.loadFromFile(T.allocator, "roms/donkeykong.nes");
+    var cart = try Cartridge.loadFromFile(T.allocator, T.io, "roms/donkeykong.nes");
     defer cart.deinit();
 }
