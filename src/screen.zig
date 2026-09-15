@@ -139,23 +139,23 @@ pub const Screen = struct {
 
         // CPU State Header
         try buf.print(allocator, "=== CPU STATE ===\n", .{});
-        try buf.print(allocator,"PC: {X:0>4}  A: {X:0>2}  X: {X:0>2}  Y: {X:0>2}\n", .{ cpu.PC, cpu.A, cpu.X, cpu.Y });
-        try buf.print(allocator,"SP: {X:0>2}  P: {X:0>2}  Cycles: {}\n", .{ cpu.SP, cpu.P, cpu.Cycles });
-        try buf.print(allocator,"\n", .{});
+        try buf.print(allocator, "PC: {X:0>4}  A: {X:0>2}  X: {X:0>2}  Y: {X:0>2}\n", .{ cpu.PC, cpu.A, cpu.X, cpu.Y });
+        try buf.print(allocator, "SP: {X:0>2}  P: {X:0>2}  Cycles: {}\n", .{ cpu.SP, @as(u8, @bitCast(cpu.P)), cpu.Cycles });
+        try buf.print(allocator, "\n", .{});
 
         // Flags
-        try buf.print(allocator,"Flags: ", .{});
-        if ((cpu.P & 0x80) != 0) try buf.print(allocator,"N", .{});
-        if ((cpu.P & 0x40) != 0) try buf.print(allocator,"V", .{});
-        try buf.print(allocator,"-", .{});
-        if ((cpu.P & 0x10) != 0) try buf.print(allocator,"B", .{});
-        if ((cpu.P & 0x08) != 0) try buf.print(allocator,"D", .{});
-        if ((cpu.P & 0x04) != 0) try buf.print(allocator,"I", .{});
-        if ((cpu.P & 0x02) != 0) try buf.print(allocator,"Z", .{});
-        if ((cpu.P & 0x01) != 0) try buf.print(allocator,"C", .{});
-        try buf.print(allocator,"\n", .{});
+        try buf.print(allocator, "Flags: ", .{});
+        if (cpu.P.negative) try buf.print(allocator, "N", .{});
+        if (cpu.P.overflow) try buf.print(allocator, "V", .{});
+        try buf.print(allocator, "-", .{});
+        if (cpu.P.break_flag) try buf.print(allocator, "B", .{});
+        if (cpu.P.decimal) try buf.print(allocator, "D", .{});
+        if (cpu.P.interrupt_disable) try buf.print(allocator, "I", .{});
+        if (cpu.P.zero) try buf.print(allocator, "Z", .{});
+        if (cpu.P.carry) try buf.print(allocator, "C", .{});
+        try buf.print(allocator, "\n", .{});
 
-        try buf.print(allocator,"\n=== MEMORY DUMP ===\n", .{});
+        try buf.print(allocator, "\n=== MEMORY DUMP ===\n", .{});
 
         // Render hex dump of first 2KB of RAM
         const mem_size: u16 = 0x800;
@@ -163,37 +163,37 @@ pub const Screen = struct {
 
         while (addr < mem_size) : (addr += 16) {
             // Address
-            try buf.print(allocator,"{X:0>4}:  ", .{addr});
+            try buf.print(allocator, "{X:0>4}:  ", .{addr});
 
             // Hex bytes
             var i: u16 = 0;
             while (i < 16 and addr + i < mem_size) : (i += 1) {
                 const byte = bus.read(addr + i);
-                try buf.print(allocator,"{X:0>2} ", .{byte});
+                try buf.print(allocator, "{X:0>2} ", .{byte});
             }
 
             // Padding for partial lines
             if (i < 16) {
                 var j = i;
                 while (j < 16) : (j += 1) {
-                    try buf.print(allocator,"   ", .{});
+                    try buf.print(allocator, "   ", .{});
                 }
             }
 
-            try buf.print(allocator,"  |", .{});
+            try buf.print(allocator, "  |", .{});
 
             // ASCII representation
             i = 0;
             while (i < 16 and addr + i < mem_size) : (i += 1) {
                 const byte = bus.read(addr + i);
                 if (byte >= 32 and byte < 127) {
-                    try buf.print(allocator,"{c}", .{byte});
+                    try buf.print(allocator, "{c}", .{byte});
                 } else {
-                    try buf.print(allocator,".", .{});
+                    try buf.print(allocator, ".", .{});
                 }
             }
 
-            try buf.print(allocator,"|\n", .{});
+            try buf.print(allocator, "|\n", .{});
         }
 
         // Render text line by line on right side (starting at x=512)

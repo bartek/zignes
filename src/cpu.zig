@@ -11,15 +11,29 @@ const panic = std.debug.panic;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
-pub const Flags = u8;
-
-pub const flagCarry: Flags = 1 << 0;
-pub const flagZero: Flags = 1 << 1;
-pub const flagInterrupt: Flags = 1 << 2;
-pub const flagDecimal: Flags = 1 << 3;
-pub const flagBreak: Flags = 1 << 4;
-pub const flagOverflow: Flags = 1 << 6;
-pub const flagNegative: Flags = 1 << 7;
+// 7  bit  0
+// ---- ----
+// NV1B DIZC
+// |||| ||||
+// |||| |||+- Carry
+// |||| ||+-- Zero
+// |||| |+--- Interrupt Disable
+// |||| +---- Decimal
+// |||+------ B flag (only exists in the byte pushed to the stack)
+// ||+------- (unused, pushed to the stack as 1)
+// |+-------- Overflow
+// +--------- Negative
+// ref: https://www.nesdev.org/wiki/Status_flags
+pub const Flags = packed struct(u8) {
+    carry: bool = false, // bit 0
+    zero: bool = false, // bit 1
+    interrupt_disable: bool = false, // bit 2
+    decimal: bool = false, // bit 3
+    break_flag: bool = false, // bit 4
+    unused: bool = false, // bit 5
+    overflow: bool = false, // bit 6
+    negative: bool = false, // bit 7
+};
 
 pub const Interrupt = enum(u8) {
     none = 0,
@@ -32,7 +46,7 @@ pub const CPU = struct {
     X: u8 = 0, // Register
     Y: u8 = 0, // Register
     A: u8 = 0, // Accumulator
-    P: Flags = 0, // Status flags
+    P: Flags = .{}, // Status flags
     SP: u8 = 0, // Stack Pointer
     PC: u16 = 0, // Program counter
 
@@ -68,10 +82,13 @@ pub const CPU = struct {
 
                 // Push the processor status register (P) onto the stack. Note that the B
                 // flag will be set to 0.
-                self.push((self.P & ~flagBreak) | (1 << 5));
+                var pushed = self.P;
+                pushed.break_flag = false;
+                pushed.unused = true;
+                self.push(@bitCast(pushed));
 
                 // Set interrupt disable flag
-                self.P |= flagInterrupt;
+                self.P.interrupt_disable = true;
 
                 // Jump to NMI vector at $FFFA
                 const lo: u16 = self.Bus.read(0xFFFA);
@@ -160,7 +177,7 @@ pub const CPU = struct {
             Op.ASL => {
                 if (instruction[1] == AddressMode.Implied) {
                     // ASL A - shift accumulator
-                    self.setFlag(flagCarry, (self.A & 0x80) != 0);
+                    self.P.carry = (self.A & 0x80) != 0;
                     self.A <<= 1;
                     self.setZN(self.A);
                     return;
@@ -169,7 +186,7 @@ pub const CPU = struct {
                 // ASL with memory
                 const addr = self.addressOfInstruction(instruction);
                 var val: u8 = self.Bus.read(addr);
-                self.setFlag(flagCarry, (val & 0x80) != 0);
+                self.P.carry = (val & 0x80) != 0;
                 val <<= 1;
                 self.Bus.write(addr, val);
                 self.setZN(val);
@@ -226,33 +243,33 @@ pub const CPU = struct {
                 const b = self.operator(instruction);
                 const result, _ = @subWithOverflow(self.A, b);
                 self.setZN(result);
-                self.setFlag(flagCarry, self.A >= b);
+                self.P.carry = self.A >= b;
             },
             Op.CPX => {
                 const b = self.operator(instruction);
                 const result, _ = @subWithOverflow(self.X, b);
                 self.setZN(result);
-                self.setFlag(flagCarry, self.X >= b);
+                self.P.carry = self.X >= b;
             },
             Op.CPY => {
                 const b = self.operator(instruction);
                 const result, _ = @subWithOverflow(self.Y, b);
                 self.setZN(result);
-                self.setFlag(flagCarry, self.Y >= b);
+                self.P.carry = self.Y >= b;
             },
-            Op.BCC => self.conditionalBranch(!self.getCarry()),
-            Op.BCS => self.conditionalBranch(self.getCarry()),
-            Op.BEQ => self.conditionalBranch(self.getZero()),
-            Op.BMI => self.conditionalBranch(self.getNegative()),
-            Op.BNE => self.conditionalBranch(!self.getZero()),
-            Op.BPL => self.conditionalBranch(!self.getNegative()),
-            Op.BVC => self.conditionalBranch(!self.getOverflow()),
-            Op.BVS => self.conditionalBranch(self.getOverflow()),
+            Op.BCC => self.conditionalBranch(!self.P.carry),
+            Op.BCS => self.conditionalBranch(self.P.carry),
+            Op.BEQ => self.conditionalBranch(self.P.zero),
+            Op.BMI => self.conditionalBranch(self.P.negative),
+            Op.BNE => self.conditionalBranch(!self.P.zero),
+            Op.BPL => self.conditionalBranch(!self.P.negative),
+            Op.BVC => self.conditionalBranch(!self.P.overflow),
+            Op.BVS => self.conditionalBranch(self.P.overflow),
 
             Op.LSR => {
                 if (instruction[1] == AddressMode.Implied) {
                     // LSR A - shift accumulator right
-                    self.setFlag(flagCarry, (self.A & 0x01) != 0);
+                    self.P.carry = (self.A & 0x01) != 0;
                     self.A >>= 1;
                     self.setZN(self.A);
                     return;
@@ -260,46 +277,46 @@ pub const CPU = struct {
                 // LSR with memory
                 const addr = self.addressOfInstruction(instruction);
                 var val: u8 = self.Bus.read(addr);
-                self.setFlag(flagCarry, (val & 0x01) != 0);
+                self.P.carry = (val & 0x01) != 0;
                 val >>= 1;
                 self.Bus.write(addr, val);
                 self.setZN(val);
             },
             Op.ROL => {
-                const old_carry: u8 = if (self.getCarry()) 1 else 0;
+                const old_carry: u8 = if (self.P.carry) 1 else 0;
                 if (instruction[1] == AddressMode.Implied) {
-                    self.setFlag(flagCarry, (self.A & 0x80) != 0);
+                    self.P.carry = (self.A & 0x80) != 0;
                     self.A = (self.A << 1) | old_carry;
                     self.setZN(self.A);
                     return;
                 }
                 const addr = self.addressOfInstruction(instruction);
                 var val: u8 = self.Bus.read(addr);
-                self.setFlag(flagCarry, (val & 0x80) != 0);
+                self.P.carry = (val & 0x80) != 0;
                 val = (val << 1) | old_carry;
                 self.Bus.write(addr, val);
                 self.setZN(val);
             },
             Op.ROR => {
-                const old_carry: u8 = if (self.getCarry()) 0x80 else 0;
+                const old_carry: u8 = if (self.P.carry) 0x80 else 0;
                 if (instruction[1] == AddressMode.Implied) {
-                    self.setFlag(flagCarry, (self.A & 0x01) != 0);
+                    self.P.carry = (self.A & 0x01) != 0;
                     self.A = (self.A >> 1) | old_carry;
                     self.setZN(self.A);
                     return;
                 }
                 const addr = self.addressOfInstruction(instruction);
                 var val: u8 = self.Bus.read(addr);
-                self.setFlag(flagCarry, (val & 0x01) != 0);
+                self.P.carry = (val & 0x01) != 0;
                 val = (val >> 1) | old_carry;
                 self.Bus.write(addr, val);
                 self.setZN(val);
             },
             Op.BIT => {
                 const b = self.operator(instruction);
-                self.setFlag(flagZero, (self.A & b) == 0);
-                self.setFlag(flagOverflow, (b & 0x40) != 0);
-                self.setFlag(flagNegative, (b & 0x80) != 0);
+                self.P.zero = (self.A & b) == 0;
+                self.P.overflow = (b & 0x40) != 0;
+                self.P.negative = (b & 0x80) != 0;
             },
 
             Op.TAX => {
@@ -336,11 +353,19 @@ pub const CPU = struct {
                 self.setZN(b);
             },
             Op.PLP => {
-                self.P = (self.pop() & 0xCF) | (self.P & 0x30);
+                // B and bit 5 are ignored on pull
+                // ref: https://www.nesdev.org/wiki/Status_flags#The_B_flag
+                var pulled: Flags = @bitCast(self.pop());
+                pulled.break_flag = self.P.break_flag;
+                pulled.unused = self.P.unused;
+                self.P = pulled;
             },
             Op.PHP => {
                 // Store byte to stack containing status flags with break and bit 5 set (order is NV11DIZC)
-                self.push(self.P | flagBreak | (1 << 5));
+                var pushed = self.P;
+                pushed.break_flag = true;
+                pushed.unused = true;
+                self.push(@bitCast(pushed));
             },
             Op.PLA => {
                 self.A = self.pop();
@@ -360,25 +385,25 @@ pub const CPU = struct {
                 self.Bus.write(self.addressOfInstruction(instruction), self.A);
             },
             Op.SEC => {
-                self.setFlag(flagCarry, true);
+                self.P.carry = true;
             },
             Op.CLC => {
-                self.setFlag(flagCarry, false);
+                self.P.carry = false;
             },
             Op.CLD => {
-                self.setFlag(flagDecimal, false);
+                self.P.decimal = false;
             },
             Op.CLI => {
-                self.setFlag(flagInterrupt, false);
+                self.P.interrupt_disable = false;
             },
             Op.CLV => {
-                self.setFlag(flagOverflow, false);
+                self.P.overflow = false;
             },
             Op.SED => {
-                self.setFlag(flagDecimal, true);
+                self.P.decimal = true;
             },
             Op.SEI => {
-                self.setFlag(flagInterrupt, true);
+                self.P.interrupt_disable = true;
             },
             Op.STX => {
                 self.Bus.write(self.addressOfInstruction(instruction), self.X);
@@ -431,7 +456,10 @@ pub const CPU = struct {
                 // pull status flags (ignore bits 4 (break) and 5 (unused). These don't
                 // exist as physical registers and are only artifacts in transient
                 // scenarios. Thus, they are discarded on pull)
-                self.P = (self.pop() & 0xCF) | (self.P & 0x30);
+                var pulled: Flags = @bitCast(self.pop());
+                pulled.break_flag = self.P.break_flag;
+                pulled.unused = self.P.unused;
+                self.P = pulled;
 
                 // pull PC low byte, then high byte
                 const lo: u16 = self.pop();
@@ -446,10 +474,13 @@ pub const CPU = struct {
                 self.push(@intCast(self.PC & 0xFF));
 
                 // push status flags with break and bit 5 set (NV11DIZC)
-                self.push(self.P | flagBreak | (1 << 5));
+                var pushed = self.P;
+                pushed.break_flag = true;
+                pushed.unused = true;
+                self.push(@bitCast(pushed));
 
                 // set interrupt disable flag
-                self.P |= flagInterrupt;
+                self.P.interrupt_disable = true;
 
                 // jump to IRQ vector at $FFFE
                 const lo: u16 = self.Bus.read(0xFFFE);
@@ -465,10 +496,10 @@ pub const CPU = struct {
 
     // adc adds carry flag and memory (arg) value to accumulator. Then sets flags.
     fn adc(self: *CPU, arg: u8) void {
-        const v: u16 = @as(u16, self.A) + @as(u16, arg) + @intFromBool(self.getCarry());
+        const v: u16 = @as(u16, self.A) + @as(u16, arg) + @intFromBool(self.P.carry);
         self.setZN(v);
         self.setCarry(v);
-        self.setOverflow(((self.A ^ v) & (arg ^ v) & 0x80) != 0);
+        self.P.overflow = ((self.A ^ v) & (arg ^ v) & 0x80) != 0;
         self.A = @truncate(v);
     }
 
@@ -580,50 +611,15 @@ pub const CPU = struct {
         return self.Bus.read(0x100 + @as(u16, self.SP));
     }
 
-    fn getNegative(self: *CPU) bool {
-        return (self.P & flagNegative) != 0;
-    }
-
-    fn getZero(self: *CPU) bool {
-        return (self.P & flagZero) != 0;
-    }
-
-    fn getOverflow(self: *CPU) bool {
-        return (self.P & flagOverflow) != 0;
-    }
-
-    fn getCarry(self: *CPU) bool {
-        return (self.P & flagCarry) != 0;
-    }
-
-    fn setFlag(self: *CPU, flag: Flags, value: bool) void {
-        if (value) {
-            self.P |= flag;
-        } else {
-            self.P &= ~flag;
-        }
-    }
-
-    // setZero accepts a full 16-bit result and sets zero based on the low byte.
-    fn setZero(self: *CPU, value: u16) void {
-        self.setFlag(flagZero, (value & 0xff) == 0);
-    }
-
-    fn setNegative(self: *CPU, value: u16) void {
-        self.setFlag(flagNegative, value & 0x80 != 0);
-    }
-
+    // setZN accepts a full 16-bit result and sets zero/negative based on the low byte.
     fn setZN(self: *CPU, value: u16) void {
-        self.setZero(value);
-        self.setNegative(value);
+        self.P.zero = (value & 0xff) == 0;
+        self.P.negative = (value & 0x80) != 0;
     }
 
+    // setCarry accepts a full 16-bit result and sets carry if it overflowed a byte.
     fn setCarry(self: *CPU, value: u16) void {
-        self.setFlag(flagCarry, value > 0xFF);
-    }
-
-    fn setOverflow(self: *CPU, value: bool) void {
-        self.setFlag(flagOverflow, value);
+        self.P.carry = value > 0xFF;
     }
 };
 
@@ -708,7 +704,7 @@ pub const CPUState = struct {
     a: u8,
     x: u8,
     y: u8,
-    p: Flags,
+    p: u8,
     ram: []Cell,
 };
 
