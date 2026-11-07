@@ -1,5 +1,40 @@
 const std = @import("std");
 
+const length_table = [32]u8{
+    10,
+    254,
+    20,
+    2,
+    40,
+    4,
+    80,
+    6,
+    160,
+    8,
+    60,
+    10,
+    14,
+    12,
+    26,
+    14,
+    12,
+    16,
+    24,
+    18,
+    48,
+    20,
+    96,
+    22,
+    192,
+    24,
+    72,
+    26,
+    16,
+    28,
+    32,
+    30,
+};
+
 // Each Pulse channel contains the following:
 // enevelope generator, sweep unit, timer, 8-step sequencer, length counter
 // https://www.nesdev.org/wiki/APU_Pulse
@@ -20,6 +55,10 @@ const Pulse = struct {
     sweep: PulseSweep = .{},
     timer_period: u11 = 0,
 
+    // length counter
+    length_counter: u8 = 0,
+    counter_enabled: bool = false,
+
     // write updates the register in Pulse. Expects a truncated address so only low 2 bits
     // of the address are switched on.
     pub fn write(self: *Pulse, register: u2, val: u8) void {
@@ -30,10 +69,31 @@ const Pulse = struct {
             2 => self.timer_period = (self.timer_period & 0x700) | val,
             3 => {
                 const load: PulseLoad = @bitCast(val);
+                if (self.counter_enabled) {
+                    self.length_counter = length_table[load.length_index];
+                }
                 self.timer_period = (@as(u11, load.timer_hi) << 8) | (self.timer_period & 0xFF);
             },
         }
     }
+
+    // setCounter sets counter to on or off
+    pub fn setCounter(self: *Pulse, on: bool) void {
+        if (!on) {
+            self.length_counter = 0;
+        }
+        self.counter_enabled = on;
+    }
+};
+
+// ChannelEnable supports $4015 write
+const ChannelEnable = packed struct(u8) {
+    pulse1: bool = false, // 1
+    pulse2: bool = false, // 2
+    triangle: bool = false, // T
+    noise: bool = false, // N
+    dmc: bool = false, // D
+    _unused: u3 = 0, // --
 };
 
 // $4000 / $4004 :: DDLC VVVV
@@ -71,6 +131,11 @@ pub const APU = struct {
         switch (addr) {
             0x4000...0x4003 => self.pulse1.write(@truncate(addr), val),
             0x4004...0x4007 => self.pulse2.write(@truncate(addr), val),
+            0x4015 => {
+                const status: ChannelEnable = @bitCast(val);
+                self.pulse1.setCounter(status.pulse1);
+                self.pulse2.setCounter(status.pulse2);
+            },
             else => {},
         }
     }
@@ -125,4 +190,21 @@ test "writing $4004-$4007 configures pulse 2" {
     try std.testing.expectEqual(5, apu.pulse2.control.volume);
     try std.testing.expectEqual(253, apu.pulse2.timer_period);
     try std.testing.expectEqual(0, apu.pulse1.timer_period); // pulse 1 untouched
+}
+
+test "length counter loads and resets on $4015" {
+    var apu: APU = .{};
+    // enable
+    apu.writeRegister(0x4015, 0b01);
+    apu.writeRegister(0x4003, 0b00001_000); // length index 1-> 254
+    try std.testing.expect(apu.pulse1.counter_enabled);
+    try std.testing.expectEqual(254, apu.pulse1.length_counter);
+
+    // and disable
+    apu.writeRegister(0x4015, 0b00);
+    try std.testing.expect(!apu.pulse1.counter_enabled);
+
+    // writing to 4003 should be ignored as counter is disabled
+    apu.writeRegister(0x4003, 0b00001_000); // length index 1-> 254
+    try std.testing.expectEqual(0, apu.pulse1.length_counter);
 }
