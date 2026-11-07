@@ -59,6 +59,16 @@ const Pulse = struct {
     length_counter: u8 = 0,
     counter_enabled: bool = false,
 
+    pub fn clockLength(self: *Pulse) void {
+        if (self.control.length_halt) {
+            // do nothing, hold note
+        } else {
+            if (self.length_counter > 0) {
+                self.length_counter = self.length_counter - 1;
+            }
+        }
+    }
+
     // write updates the register in Pulse. Expects a truncated address so only low 2 bits
     // of the address are switched on.
     pub fn write(self: *Pulse, register: u2, val: u8) void {
@@ -207,4 +217,32 @@ test "length counter loads and resets on $4015" {
     // writing to 4003 should be ignored as counter is disabled
     apu.writeRegister(0x4003, 0b00001_000); // length index 1-> 254
     try std.testing.expectEqual(0, apu.pulse1.length_counter);
+}
+
+test "length counter counts down and stops at 0" {
+    var apu: APU = .{};
+    // enable
+    apu.writeRegister(0x4015, 0b01);
+    apu.writeRegister(0x4003, 0b00011_000); // length index 3 -> 2 ticks
+    try std.testing.expectEqual(2, apu.pulse1.length_counter);
+
+    // tick down to 0
+    var expected = apu.pulse1.length_counter;
+    while (expected > 0) {
+        apu.pulse1.clockLength();
+        expected -= 1;
+        try std.testing.expectEqual(expected, apu.pulse1.length_counter);
+    }
+
+    // do one final tick - should be at 0 and not wrap to 255
+    apu.pulse1.clockLength();
+    try std.testing.expectEqual(0, apu.pulse1.length_counter);
+
+    // also test the halt branch
+    apu.writeRegister(0x4015, 0b01);
+    apu.writeRegister(0x4000, 0b00_1_0_0000); // L = 1 = halt
+    apu.writeRegister(0x4003, 0b00011_000); // length index 3 -> 2 ticks
+
+    apu.pulse1.clockLength(); // tick should not change counter due to halt
+    try std.testing.expectEqual(2, apu.pulse1.length_counter);
 }
