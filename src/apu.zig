@@ -39,6 +39,32 @@ const Pulse = struct {
     timer: u11 = 0, // current countdown
     sequence_step: u3 = 0, // index into duty_cycle_sequences
 
+    // output returns, to the mixer, the pulse channel's current envelope or zero
+    // https://www.nesdev.org/wiki/APU_Pulse#Mixer_output
+    pub fn output(self: *const Pulse) u4 {
+        // If any of the next conditions are true, pulse channel sends zero (silence) to
+        // the mixer.
+
+        // sequencer output is zero
+        if (duty_cycle_sequences[self.control.duty][self.sequence_step] == 0) {
+            return 0;
+        }
+
+        // the length counter is zero
+        if (self.length_counter == 0) {
+            return 0;
+        }
+
+        // the timer value is less than eight
+        if (self.timer_period < 8) {
+            return 0;
+        }
+
+        // TODO
+        // overflow from the sweep unit's adder is silencing the channel
+        return self.control.volume;
+    }
+
     // clockTimer counts the timer. Each time it passes 0 it reloads and advances the
     // sequencer one step. Called once per APU cycle
     pub fn clockTimer(self: *Pulse) void {
@@ -132,6 +158,9 @@ pub const APU = struct {
     pulse2: Pulse = .{},
     irq_pending: bool = false,
 
+    // run every second CPU cycle, flip on every tick
+    odd_cycle: bool = false,
+
     pub fn writeRegister(self: *APU, addr: u16, val: u8) void {
         switch (addr) {
             0x4000...0x4003 => self.pulse1.write(@truncate(addr), val),
@@ -152,7 +181,11 @@ pub const APU = struct {
     }
 
     pub fn tick(self: *APU) void {
-        _ = self;
+        self.odd_cycle = !self.odd_cycle;
+        if (self.odd_cycle) {
+            self.pulse1.clockTimer();
+            self.pulse2.clockTimer();
+        }
     }
 
     pub fn sample() f32 {}

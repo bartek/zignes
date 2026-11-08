@@ -34,7 +34,7 @@ pub const NES = struct {
         self.apu = .{};
         self.controller = .{};
         self.ppu = .{ .cart = &self.cart };
-        self.bus = .{ .nesBus = NESBus.init(&self.ram, &self.ppu, &self.controller, &self.cart) };
+        self.bus = .{ .nesBus = NESBus.init(&self.ram, &self.ppu, &self.apu, &self.controller, &self.cart) };
         self.cpu = CPU.init(&self.bus);
 
         // Read reset vector to set CPU entry point.
@@ -50,7 +50,6 @@ pub const NES = struct {
     pub fn tick(self: *NES) bool {
         _ = self.cpu.tick();
 
-        // TODO: apu tick the same as CPU?
         self.apu.tick();
 
         // CPU runs at 1/3 speed of PPU, so tick PPU 3x for every CPU tick

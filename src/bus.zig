@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const PPU = @import("ppu.zig").PPU;
+const APU = @import("apu.zig").APU;
 const Cartridge = @import("cartridge.zig").Cartridge;
 const Controller = @import("controller.zig").Controller;
 
@@ -50,18 +51,21 @@ pub const CPUTestBus = struct {
 pub const NESBus = struct {
     ram: []u8,
     ppu: *PPU,
+    apu: *APU,
     controller: *Controller,
     cart: *Cartridge, // TODO: will be used to determine mapper
 
     pub fn init(
         ram: []u8,
         ppu: *PPU,
+        apu: *APU,
         controller: *Controller,
         cartridge: *Cartridge,
     ) NESBus {
         return NESBus{
             .ram = ram,
             .ppu = ppu,
+            .apu = apu,
             .controller = controller,
             .cart = cartridge,
         };
@@ -91,7 +95,9 @@ pub const NESBus = struct {
             // Use mirroring to reduce the large address space into just the 8 entries
             // we need.
             0x2000...0x3FFF => self.ppu.writeRegister(addr & 0x0007, data),
-            0x4000...0x4013 => {}, // TODO: APU & I/O
+            0x4000...0x4013 => {
+                self.apu.writeRegister(addr, data);
+            },
             0x4014 => {
                 // OAM DMA: (see PPU OAM page on nesdev)
                 // Copy 256 bytes from CPU page into PPU OAM
@@ -102,9 +108,14 @@ pub const NESBus = struct {
                     self.ppu.oam[i] = self.ram[addr_i & 0x07ff];
                 }
             },
-            0x4015 => {}, // TODO APU & I/O
+            0x4015 => {
+                self.apu.writeRegister(addr, data);
+            },
             0x4016 => self.controller.write(data),
-            0x4017...0x401F => {}, // TODO: APU & I/O cont.
+            0x4017 => {
+                self.apu.writeRegister(addr, data);
+            },
+            0x4018...0x401F => {}, // TODO: APU & I/O cont.
             0x4020...0x5FFF => {}, // TODO: Cartridge expansion ROM
             0x6000...0x7FFF => {}, // TODO: SRAM (battery-backed)
             0x8000...0xFFFF => self.cart.cpuWrite(addr, data),
