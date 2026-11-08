@@ -1,39 +1,15 @@
 const std = @import("std");
 
-const length_table = [32]u8{
-    10,
-    254,
-    20,
-    2,
-    40,
-    4,
-    80,
-    6,
-    160,
-    8,
-    60,
-    10,
-    14,
-    12,
-    26,
-    14,
-    12,
-    16,
-    24,
-    18,
-    48,
-    20,
-    96,
-    22,
-    192,
-    24,
-    72,
-    26,
-    16,
-    28,
-    32,
-    30,
+// Duty Cycle Sequences per
+// https://www.nesdev.org/wiki/APU_Pulse#Sequencer_operation
+const duty_cycle_sequences = [4][8]u1{
+    .{ 0, 1, 0, 0, 0, 0, 0, 0 }, // 0: 12.5%
+    .{ 0, 1, 1, 0, 0, 0, 0, 0 }, // 1: 25%
+    .{ 0, 1, 1, 1, 1, 0, 0, 0 }, // 2:  50%
+    .{ 1, 0, 0, 1, 1, 1, 1, 1 }, // 3  25% negated
 };
+
+const length_table = [32]u8{ 10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30 };
 
 // Each Pulse channel contains the following:
 // enevelope generator, sweep unit, timer, 8-step sequencer, length counter
@@ -59,6 +35,21 @@ const Pulse = struct {
     length_counter: u8 = 0,
     counter_enabled: bool = false,
 
+    // duty
+    timer: u11 = 0, // current countdown
+    sequence_step: u3 = 0, // index into duty_cycle_sequences
+
+    // clockTimer counts the timer. Each time it passes 0 it reloads and advances the
+    // sequencer one step. Called once per APU cycle
+    pub fn clockTimer(self: *Pulse) void {
+        if (self.timer == 0) {
+            self.timer = self.timer_period;
+            self.sequence_step +%= 1; // u3 wraps 7 -> 0
+        } else {
+            self.timer -= 1;
+        }
+    }
+
     pub fn clockLength(self: *Pulse) void {
         if (self.control.length_halt) {
             // do nothing, hold note
@@ -78,11 +69,15 @@ const Pulse = struct {
             // set the low 8 bits of timer period, keep the high 3
             2 => self.timer_period = (self.timer_period & 0x700) | val,
             3 => {
+                // Length counter load value and timer period upper 3 bits.
                 const load: PulseLoad = @bitCast(val);
                 if (self.counter_enabled) {
                     self.length_counter = length_table[load.length_index];
                 }
                 self.timer_period = (@as(u11, load.timer_hi) << 8) | (self.timer_period & 0xFF);
+
+                // Reset the sequencer index (i.e the pulse phase)
+                self.sequence_step = 0;
             },
         }
     }
@@ -245,4 +240,33 @@ test "length counter counts down and stops at 0" {
 
     apu.pulse1.clockLength(); // tick should not change counter due to halt
     try std.testing.expectEqual(2, apu.pulse1.length_counter);
+}
+
+// duty tests
+test "duty sequencer returns expected outputs" {
+    for (duty_cycle_sequences, 0..) |pattern, duty| {
+        var p: Pulse = .{};
+        p.control.duty = @intCast(duty);
+        p.timer_period = 0; // advanced on every tick
+
+        for (pattern) |bit| {
+            try std.testing.expectEqual(bit, duty_cycle_sequences[p.control.duty][p.sequence_step]);
+            p.clockTimer();
+        }
+        // wrapped back to the start
+        try std.testing.expectEqual(0, p.sequence_step);
+    }
+}
+
+test "$4003 write resets the sequencer phase" {
+    var apu: APU = .{};
+
+    // advance arbitrarly
+    apu.pulse1.clockTimer();
+    apu.pulse1.clockTimer();
+    try std.testing.expectEqual(2, apu.pulse1.sequence_step);
+
+    // reset
+    apu.writeRegister(0x4003, 0);
+    try std.testing.expectEqual(0, apu.pulse1.sequence_step);
 }
