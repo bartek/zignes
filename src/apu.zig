@@ -1,11 +1,23 @@
 const std = @import("std");
 
+// Mixer lookup table.
+// A 31-entry table for the two pulse channels
+// https://www.nesdev.org/wiki/APU_Mixer (Lookup Table)
+const pulse_lookup_table = blk: {
+    var table: [31]f32 = undefined;
+    table[0] = 0;
+    for (1..table.len) |n| {
+        table[n] = 95.52 / (8128.0 / @as(f32, @floatFromInt(n)) + 100.0);
+    }
+    break :blk table;
+};
+
 // Duty Cycle Sequences per
 // https://www.nesdev.org/wiki/APU_Pulse#Sequencer_operation
 const duty_cycle_sequences = [4][8]u1{
     .{ 0, 1, 0, 0, 0, 0, 0, 0 }, // 0: 12.5%
     .{ 0, 1, 1, 0, 0, 0, 0, 0 }, // 1: 25%
-    .{ 0, 1, 1, 1, 1, 0, 0, 0 }, // 2:  50%
+    .{ 0, 1, 1, 1, 1, 0, 0, 0 }, // 2: 50%
     .{ 1, 0, 0, 1, 1, 1, 1, 1 }, // 3  25% negated
 };
 
@@ -188,7 +200,14 @@ pub const APU = struct {
         }
     }
 
-    pub fn sample() f32 {}
+    // sample mixes the pulse channels into one value (~0.0 to 1.0) using
+    // pulse_lookup_table
+    // TODO: add triangle/noise/dmc once those exists
+    pub fn sample(self: *const APU) f32 {
+        // widen so the two u4s can fit , u4 larges is 15
+        const pulse_sum = @as(u5, self.pulse1.output()) + self.pulse2.output();
+        return pulse_lookup_table[pulse_sum];
+    }
 };
 
 test "APU default-initializes" {
@@ -302,4 +321,27 @@ test "$4003 write resets the sequencer phase" {
     // reset
     apu.writeRegister(0x4003, 0);
     try std.testing.expectEqual(0, apu.pulse1.sequence_step);
+}
+
+test "mixer" {
+    var apu: APU = .{};
+
+    // sample is silent when nothing is playing
+    try std.testing.expectEqual(0, apu.sample());
+
+    // place a pulse in a state where output() would return a non-zero volume
+    testSetPlaying(&apu.pulse1, 5);
+    testSetPlaying(&apu.pulse2, 2);
+
+    // 5 is the index and sum of both pulse values (5 + 2)
+    try std.testing.expectEqual(pulse_lookup_table[7], apu.sample());
+}
+
+// testSetPlaying sets pulse state
+fn testSetPlaying(p: *Pulse, volume: u4) void {
+    p.length_counter = 10; // arbitrary as long as not zero
+    p.timer_period = 8; // any value >= 8 is fine
+    p.control.volume = volume;
+    p.control.duty = 2; // 50% duty cycle sequence pattern
+    p.sequence_step = 1; // duty 1 = sound
 }
