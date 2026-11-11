@@ -6,6 +6,7 @@ const Allocator = std.mem.Allocator;
 const NES = @import("nes.zig").NES;
 const Screen = @import("screen.zig").Screen;
 const Button = @import("controller.zig").Button;
+const timing = @import("timing.zig");
 const c = @cImport({
     // SDL_cpuinfo.h pulls in arm_neon.h, which zig 0.16's translate-c
     // can't parse (missing __mfp8 builtin). Disable until upstream fixes it.
@@ -14,8 +15,9 @@ const c = @cImport({
 });
 
 fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), nes: *NES) void {
-    const target_ms: u32 = 16; // ~60 fps (1000/60 ~= 16.67)
-    var frame_start: u32 = @intCast(c.SDL_GetTicks());
+    // cycles per frame / cycles per second = seconds per frame; * 1000 for milliseconds.
+    const frame_ms: f64 = timing.cpu_cycles_per_frame / timing.cpu_hz * 1000.0; // ~16.64 ms
+    var next_frame_ms: f64 = @floatFromInt(c.SDL_GetTicks());
     while (!done.load(AtomicOrder.unordered)) {
         if (paused.load(.unordered)) {
             c.SDL_Delay(1);
@@ -24,11 +26,13 @@ fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), nes: *NES)
 
         const frame_done = nes.tick();
         if (frame_done) {
-            const elapsed: u32 = @as(u32, @intCast(c.SDL_GetTicks())) - frame_start;
-            if (elapsed < target_ms) {
-                c.SDL_Delay(target_ms - elapsed);
+            next_frame_ms += frame_ms;
+            const now: f64 = @floatFromInt(c.SDL_GetTicks());
+            if (now < next_frame_ms) {
+                c.SDL_Delay(@intFromFloat(next_frame_ms - now));
+            } else {
+                next_frame_ms = now; // fell behind (e.g. after a pause): don't try to catch up
             }
-            frame_start = @intCast(c.SDL_GetTicks());
         }
     }
 }
