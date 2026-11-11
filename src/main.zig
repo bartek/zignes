@@ -13,8 +13,14 @@ const c = @cImport({
     @cDefine("SDL_DISABLE_ARM_NEON_H", "1");
     @cInclude("SDL2/SDL.h");
 });
+const sample_rate = @import("apu.zig").sample_rate;
 
-fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), nes: *NES) void {
+fn run_thread(
+    done: *Atomic.Value(bool),
+    paused: *Atomic.Value(bool),
+    nes: *NES,
+    audio_device: c.SDL_AudioDeviceID,
+) void {
     // cycles per frame / cycles per second = seconds per frame; * 1000 for milliseconds.
     const frame_ms: f64 = timing.cpu_cycles_per_frame / timing.cpu_hz * 1000.0; // ~16.64 ms
     var next_frame_ms: f64 = @floatFromInt(c.SDL_GetTicks());
@@ -26,6 +32,11 @@ fn run_thread(done: *Atomic.Value(bool), paused: *Atomic.Value(bool), nes: *NES)
 
         const frame_done = nes.tick();
         if (frame_done) {
+            const samples = nes.apu.takeSample();
+
+            // negative number reponse means no audio. nothing we can do for the time
+            // being so ignore. 0 = healthy
+            _ = c.SDL_QueueAudio(audio_device, samples.ptr, @intCast(samples.len * @sizeOf(f32)));
             next_frame_ms += frame_ms;
             const now: f64 = @floatFromInt(c.SDL_GetTicks());
             if (now < next_frame_ms) {
@@ -52,10 +63,31 @@ pub fn main(init: std.process.Init) !void {
     var screen = try Screen.init();
     defer screen.deinit();
 
+    // Audio: Start the audio subsystem
+    if (c.SDL_InitSubSystem(c.SDL_INIT_AUDIO) < 0) return error.SDLAudioInit;
+
+    var want = std.mem.zeroes(c.SDL_AudioSpec);
+    want.freq = @intFromFloat(sample_rate); // must match rate APU produces
+    want.format = c.AUDIO_F32SYS; // 32 bit floats, same as APU.sample()
+    want.channels = 1; // the NES is mono
+    want.samples = 1024; // SDL's internal buffer size
+    want.callback = null; // null = queue mode = we push samples with SDL_QueueAudio
+
+    const audio_dev = c.SDL_OpenAudioDevice(null, 0, &want, null, 0);
+    if (audio_dev == 0) return error.SDLAudioOpen;
+    defer c.SDL_CloseAudioDevice(audio_dev);
+
+    c.SDL_PauseAudioDevice(audio_dev, 0); // devices start paused, 0 = play
+
     var done = Atomic.Value(bool).init(false);
     var paused = Atomic.Value(bool).init(false);
 
-    const thread_nes = try std.Thread.spawn(.{}, run_thread, .{ &done, &paused, &nes });
+    const thread_nes = try std.Thread.spawn(.{}, run_thread, .{
+        &done,
+        &paused,
+        &nes,
+        audio_dev,
+    });
 
     // Event loop - keep window open
     var quit = false;

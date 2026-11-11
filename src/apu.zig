@@ -1,4 +1,11 @@
 const std = @import("std");
+const timing = @import("timing.zig");
+
+// Host audio rate: how many samples per second we hand to the sound card.
+pub const sample_rate: f64 = 44_100.0;
+
+// How many CPU cycles pass between two output samples
+const cycles_per_sample: f64 = timing.cpu_hz / sample_rate; // ~40.58
 
 // Mixer lookup table.
 // A 31-entry table for the two pulse channels
@@ -173,6 +180,14 @@ pub const APU = struct {
     // run every second CPU cycle, flip on every tick
     odd_cycle: bool = false,
 
+    // tracks the CPU cycles since the last output sample. This supports downsampling
+    sample_clock: f64 = 0,
+
+    // Samples waiting to be sent to the sound card
+    samples: [1024]f32 = undefined,
+    // And how many are filled in
+    sample_count: usize = 0,
+
     pub fn writeRegister(self: *APU, addr: u16, val: u8) void {
         switch (addr) {
             0x4000...0x4003 => self.pulse1.write(@truncate(addr), val),
@@ -192,11 +207,28 @@ pub const APU = struct {
         return 0;
     }
 
+    // takeSample drains the buffer and returns the samples recorded since last call.
+    pub fn takeSample(self: *APU) []const f32 {
+        const out = self.samples[0..self.sample_count];
+        self.sample_count = 0;
+        return out;
+    }
+
     pub fn tick(self: *APU) void {
         self.odd_cycle = !self.odd_cycle;
         if (self.odd_cycle) {
             self.pulse1.clockTimer();
             self.pulse2.clockTimer();
+        }
+
+        // Every ~40.58 CPU cycles, record one sample for the sound card
+        self.sample_clock += 1;
+        if (self.sample_clock >= cycles_per_sample) { // once ~40.57 cycles have passed, cut sample
+            self.sample_clock -= cycles_per_sample;
+            if (self.sample_count < self.samples.len) { // guard array
+                self.samples[self.sample_count] = self.sample();
+                self.sample_count += 1;
+            }
         }
     }
 
@@ -321,6 +353,15 @@ test "$4003 write resets the sequencer phase" {
     // reset
     apu.writeRegister(0x4003, 0);
     try std.testing.expectEqual(0, apu.pulse1.sequence_step);
+}
+
+test "tick records one sample on applicable cpu cycles" {
+    var apu: APU = .{};
+    for (0..40) |_| apu.tick(); // tick towards ~40.58 CPU cycles
+    try std.testing.expectEqual(0, apu.sample_count); // 40 < 40.58; almost there
+
+    apu.tick(); // 41 - we're due!
+    try std.testing.expectEqual(1, apu.sample_count);
 }
 
 test "mixer" {
